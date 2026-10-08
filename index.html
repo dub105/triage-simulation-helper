@@ -95,6 +95,11 @@ input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
 .chip { display: inline-block; font-size: .75rem; font-weight: 700; padding: 1px 8px; border-radius: 4px; margin-right: 4px; }
 .chip.preg { color: var(--preg); background: var(--preg-bg); }
 .chip.child { color: var(--child); background: var(--child-bg); }
+.chip.cat { color: var(--accent); background: var(--accent-soft); }
+.chip.tag-red { color: #fff; background: #c0392b; }
+.chip.tag-yellow { color: #3a2e00; background: #f2c230; }
+.chip.tag-green { color: #fff; background: #2e7d4f; }
+select.tagsel { padding: 7px 8px; }
 .chip.none { color: var(--muted); background: var(--bg); }
 .caseinfo { margin-top: 10px; min-height: 28px; }
 .twocol { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
@@ -303,6 +308,13 @@ window.makeDb = function () {
       .replace(/[Ａ-Ｚａ-ｚ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
       .replace(/[　\s]+/g, '').trim();
   }
+  var CATS = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷']];
+  var TAGS = [['red', '赤'], ['yellow', '黄'], ['green', '緑']];
+  var HATTR = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷'], ['preg', '妊婦'], ['ped', '小児'], ['red', '赤タグ'], ['yellow', '黄タグ'], ['green', '緑タグ']];
+  var CATTR = ['trauma', 'brain', 'burn', 'preg', 'child'];
+  var HKEYS = HATTR.map(function (a) { return a[0]; });
+  function yes(x) { return /^(○|〇|◯|o|1|可|true|yes|y)$/i.test(String(x || '').trim()); }
+  function tagName(t) { for (var i = 0; i < TAGS.length; i++) if (TAGS[i][0] === t) return TAGS[i][1]; return ''; }
   function validId(s) { return /^[A-Za-z0-9_\-.~:@+]{1,50}$/.test(s) && s !== '.' && s !== '..'; }
   function byNo(a, b) { return String(a.no).localeCompare(String(b.no), 'ja', { numeric: true }); }
   function byOrd(a, b) { return (a.ord - b.ord) || String(a.name).localeCompare(String(b.name), 'ja'); }
@@ -348,13 +360,17 @@ window.makeDb = function () {
   }
   function evaluate(c, h) {
     var r = [];
+    CATS.forEach(function (a) { if (c[a[0]] && !h[a[0]]) r.push('この病院は' + a[1] + 'を受け入れできません'); });
     if (c.preg && !h.preg) r.push('この病院は妊婦を受け入れできません');
     if (c.child && !h.ped) r.push('この病院は小児を受け入れできません');
+    if (c.tag && !h[c.tag]) r.push('この病院は' + tagName(c.tag) + 'タグを受け入れできません');
     if (remaining(h, ui.team) <= 0) r.push('受け入れ可能人数に達しています（満床）');
     return r;
   }
   function caseChips(c) {
     var s = '';
+    if (c.tag) s += '<span class="chip tag-' + esc(c.tag) + '">' + esc(tagName(c.tag)) + 'タグ</span>';
+    CATS.forEach(function (a) { if (c[a[0]]) s += '<span class="chip cat">' + a[1] + '</span>'; });
     if (c.preg) s += '<span class="chip preg">妊婦</span>';
     if (c.child) s += '<span class="chip child">小児</span>';
     return s;
@@ -507,7 +523,7 @@ window.makeDb = function () {
       '<div id="tdyn" class="stack"></div></div>';
   }
   function tInfoHtml() {
-    if (!ui.tCase) return '<span class="muted">症例番号を入力すると、妊婦・小児の区分が表示されます。</span>';
+    if (!ui.tCase) return '<span class="muted">症例番号を入力すると、区分が表示されます。</span>';
     var c = S.caseMap[ui.tCase];
     if (!c) return '<span class="err">症例 ' + esc(ui.tCase) + ' は登録されていません。</span>';
     var n = S.treats.filter(function (t) { return t.team === ui.team && t.caseNo === c.no; }).length;
@@ -649,7 +665,7 @@ window.makeDb = function () {
   }
 
   function infoHtml() {
-    if (!ui.caseNo) return '<span class="muted">症例番号を入力すると、妊婦・小児の区分が表示されます。</span>';
+    if (!ui.caseNo) return '<span class="muted">症例番号を入力すると、区分が表示されます。</span>';
     var c = S.caseMap[ui.caseNo];
     if (!c) return '<span class="err">症例 ' + esc(ui.caseNo) + ' は登録されていません。</span>';
     var t = S.logMap[ui.team + '|' + c.no];
@@ -701,8 +717,7 @@ window.makeDb = function () {
         '<span class="hname">' + esc(x.name) + '</span>' +
         '<span class="slots"><span class="n">' + rem + '</span><span class="of">残 / 定員 ' + x.cap + '</span></span>' +
         '<span class="meter"><i style="width:' + pct + '%"></i></span>' +
-        '<span class="caps"><span>妊婦 <b class="' + (x.preg ? 'y' : 'n') + '">' + (x.preg ? '○' : '×') + '</b></span>' +
-        '<span>小児 <b class="' + (x.ped ? 'y' : 'n') + '">' + (x.ped ? '○' : '×') + '</b></span></span></button>';
+        '<span class="caps">' + HATTR.map(function (a) { return '<span>' + a[1] + ' <b class="' + (x[a[0]] ? 'y' : 'n') + '">' + (x[a[0]] ? '○' : '×') + '</b></span>'; }).join('') + '</span></button>';
     }).join('') : '<div class="empty">病院が未登録です。「病院」タブで登録してください。</div>';
 
     dyn.innerHTML =
@@ -718,18 +733,20 @@ window.makeDb = function () {
     var add = '<form class="panel addform" data-form="addHospital">' +
       '<div class="grow"><label class="label" for="hn">病院名</label><input type="text" id="hn" name="name" required style="width:100%"></div>' +
       '<div><label class="label" for="hc">受入可能人数</label><input type="number" id="hc" name="cap" min="0" value="2" required class="num"></div>' +
-      '<label class="cb"><input type="checkbox" name="preg"> 妊婦可</label>' +
-      '<label class="cb"><input type="checkbox" name="ped"> 小児可</label>' +
+      HATTR.map(function (a) { return '<label class="cb"><input type="checkbox" name="' + a[0] + '"> ' + a[1] + '可</label>'; }).join('') +
       '<button class="btn" type="submit">追加</button></form>';
+    var hbulk = '<form class="panel" data-form="bulkHospitals"><h2>まとめて登録</h2>' +
+      '<p class="sub" style="margin-top:0">1行に1病院。「病院名,定員,外傷,脳疾患,熱傷,妊婦,小児,赤,黄,緑」の順に、受け入れ可なら○、不可なら×を書きます。表計算ソフトからの貼り付けも使えます。同じ名前の病院は登録しません。</p>' +
+      '<textarea id="hbulk" name="bulk" placeholder="病院A,20,○,○,○,○,○,○,○,○&#10;病院B,7,○,×,×,×,×,○,○,○"></textarea>' +
+      '<div class="row" style="margin-top:10px"><button class="btn" type="submit">まとめて登録</button><span class="status' + (/不正|できません/.test(ui.hBulkMsg || '') ? ' bad' : '') + '" aria-live="polite">' + esc(ui.hBulkMsg || '') + '</span></div></form>';
     var list = S.hospitals.length ? S.hospitals.map(function (h) {
       return '<div class="item"><div class="fields">' +
         '<input class="nm" type="text" aria-label="病院名" value="' + esc(h.name) + '" data-chg="hName" data-id="' + esc(h.id) + '">' +
         '<label class="cb">受入可能人数 <input class="num" type="number" min="0" value="' + h.cap + '" data-chg="hCap" data-id="' + esc(h.id) + '"></label>' +
-        '<label class="cb"><input type="checkbox" data-chg="hPreg" data-id="' + esc(h.id) + '"' + (h.preg ? ' checked' : '') + '> 妊婦可</label>' +
-        '<label class="cb"><input type="checkbox" data-chg="hPed" data-id="' + esc(h.id) + '"' + (h.ped ? ' checked' : '') + '> 小児可</label>' +
+        HATTR.map(function (a) { return '<label class="cb"><input type="checkbox" data-chg="hAttr" data-k="' + a[0] + '" data-id="' + esc(h.id) + '"' + (h[a[0]] ? ' checked' : '') + '> ' + a[1] + '可</label>'; }).join('') +
         '</div><div>' + armBtn('dh' + h.id, '削除', 'もう一度押すと削除', 'delHosp', 'data-id="' + esc(h.id) + '"') + '</div></div>';
     }).join('') : '<div class="empty">病院が未登録です。</div>';
-    return '<div class="stack">' + add + '<div class="panel"><h2>登録済みの病院</h2>' + list + '</div></div>';
+    return '<div class="stack">' + add + hbulk + '<div class="panel"><h2>登録済みの病院</h2>' + list + '</div></div>';
   }
 
   function viewMethods() {
@@ -746,6 +763,9 @@ window.makeDb = function () {
     return '<div class="stack">' + add + '<div class="panel"><h2>登録済みの搬送手段</h2>' + list + '</div></div>';
   }
 
+  function tagSelect(attrs, cur) {
+    return '<select class="tagsel" aria-label="トリアージタグ" ' + attrs + '><option value="">タグなし</option>' + TAGS.map(function (a) { return '<option value="' + a[0] + '"' + (cur === a[0] ? ' selected' : '') + '>' + a[1] + 'タグ</option>'; }).join('') + '</select>';
+  }
   function caseRows() {
     var f = norm(ui.filter);
     var cases = S.cases.slice().sort(byNo).filter(function (c) { return !f || String(c.no).indexOf(f) !== -1; });
@@ -757,8 +777,8 @@ window.makeDb = function () {
       return '<div class="item"><div class="fields">' +
         '<strong style="min-width:5.5em">症例 ' + esc(c.no) + '</strong>' +
         '<input class="nm" type="text" aria-label="メモ" value="' + esc(c.memo || '') + '" data-chg="cMemo" data-no="' + esc(c.no) + '">' +
-        '<label class="cb"><input type="checkbox" data-chg="cPreg" data-no="' + esc(c.no) + '"' + (c.preg ? ' checked' : '') + '> 妊婦</label>' +
-        '<label class="cb"><input type="checkbox" data-chg="cChild" data-no="' + esc(c.no) + '"' + (c.child ? ' checked' : '') + '> 小児</label>' +
+        CATTR.map(function (k) { var nm = k === 'preg' ? '妊婦' : k === 'child' ? '小児' : CATS.filter(function (a) { return a[0] === k; })[0][1]; return '<label class="cb"><input type="checkbox" data-chg="cAttr" data-k="' + k + '" data-no="' + esc(c.no) + '"' + (c[k] ? ' checked' : '') + '> ' + nm + '</label>'; }).join('') +
+        tagSelect('data-chg="cTag" data-no="' + esc(c.no) + '"', c.tag) +
         tl.map(function (t) { return '<span class="chip child">' + esc(teamName(t.team)) + ' 搬送済 → ' + esc(t.hname || '不明') + '</span>'; }).join('') +
         '</div><div>' + armBtn('dc' + c.no, '削除', 'もう一度押すと削除', 'delCase', 'data-no="' + esc(c.no) + '"') + '</div></div>';
     }).join('');
@@ -772,12 +792,14 @@ window.makeDb = function () {
     var add = '<form class="panel addform" data-form="addCase">' +
       '<div><label class="label" for="cn">症例番号</label><input type="text" id="cn" name="no" required class="cno" inputmode="numeric" autocomplete="off"></div>' +
       '<div class="grow"><label class="label" for="cm">メモ（任意）</label><input type="text" id="cm" name="memo" style="width:100%"></div>' +
+      CATS.map(function (a) { return '<label class="cb"><input type="checkbox" name="' + a[0] + '"> ' + a[1] + '</label>'; }).join('') +
       '<label class="cb"><input type="checkbox" name="preg"> 妊婦</label>' +
       '<label class="cb"><input type="checkbox" name="child"> 小児</label>' +
+      tagSelect('name="tag"', '') +
       '<button class="btn" type="submit">追加</button></form>';
     var bulk = '<form class="panel" data-form="bulkCases"><h2>まとめて登録</h2>' +
-      '<p class="sub" style="margin-top:0">1行に1症例。「番号,区分,メモ」の形で書きます。区分は「妊婦」「小児」「妊婦小児」のいずれか、該当しなければ空欄。表計算ソフトからの貼り付けも使えます。登録済みの番号は上書きしません。</p>' +
-      '<textarea id="bulk" name="bulk" placeholder="1,妊婦,外傷&#10;2,小児&#10;3,,胸痛"></textarea>' +
+      '<p class="sub" style="margin-top:0">1行に1症例。「番号,区分,メモ」の形で書きます。区分には「外傷」「脳疾患」「熱傷」「妊婦」「小児」「赤」「黄」「緑」を必要なだけ並べて書きます（例：外傷 赤、妊婦 黄）。該当しなければ空欄。表計算ソフトからの貼り付けも使えます。登録済みの番号は上書きしません。</p>' +
+      '<textarea id="bulk" name="bulk" placeholder="1,外傷 赤,交通事故&#10;2,小児 黄&#10;3,,胸痛"></textarea>' +
       '<div class="row" style="margin-top:10px"><button class="btn" type="submit">まとめて登録</button><span class="status' + (/不正|できません/.test(ui.bulkMsg) ? ' bad' : '') + '" aria-live="polite">' + esc(ui.bulkMsg) + '</span></div></form>';
     var filter = '<div class="panel"><label class="label" for="caseFilter">症例番号で絞り込み</label><input type="text" id="caseFilter" inputmode="numeric" autocomplete="off" value="' + esc(ui.filter) + '" style="width:200px"></div>';
     return '<div class="stack">' + add + bulk + filter + '<div class="panel" id="caseList">' + caseRows() + '</div></div>';
@@ -1073,6 +1095,9 @@ window.makeDb = function () {
     var path = null, patch = null, n;
     if (k === 'hName') { var nm = el.value.trim(); if (!nm) { renderBody(); return; } path = 'hospitals/' + id; patch = { name: nm }; }
     else if (k === 'hCap') { n = parseInt(el.value, 10); path = 'hospitals/' + id; patch = { cap: isNaN(n) || n < 0 ? 0 : n }; }
+    else if (k === 'hAttr') { var hk = el.getAttribute('data-k'); if (HKEYS.indexOf(hk) < 0) return; path = 'hospitals/' + id; patch = {}; patch[hk] = el.checked; }
+    else if (k === 'cAttr') { var ck = el.getAttribute('data-k'); if (CATTR.indexOf(ck) < 0) return; path = 'cases/' + no; patch = {}; patch[ck] = el.checked; }
+    else if (k === 'cTag') { path = 'cases/' + no; patch = { tag: /^(red|yellow|green)$/.test(el.value) ? el.value : '' }; }
     else if (k === 'hPreg') { path = 'hospitals/' + id; patch = { preg: el.checked }; }
     else if (k === 'hPed') { path = 'hospitals/' + id; patch = { ped: el.checked }; }
     else if (k === 'mName') { var mn = el.value.trim(); if (!mn) { renderBody(); return; } path = 'methods/' + id; patch = { name: mn }; }
@@ -1100,7 +1125,28 @@ window.makeDb = function () {
       var name = String(fd.get('name') || '').trim();
       n = parseInt(fd.get('cap'), 10);
       if (!name) return;
-      db.collection('hospitals').add({ name: name, cap: isNaN(n) || n < 0 ? 0 : n, preg: !!fd.get('preg'), ped: !!fd.get('ped'), ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+      var hd = { name: name, cap: isNaN(n) || n < 0 ? 0 : n, ord: Date.now() };
+      HKEYS.forEach(function (kk) { hd[kk] = !!fd.get(kk); });
+      db.collection('hospitals').add(hd).then(function () { f.reset(); }).catch(failed);
+    } else if (kind === 'bulkHospitals') {
+      var hl = String(fd.get('bulk') || '').split(/\r?\n/).filter(function (l) { return l.trim(); });
+      var hitems = [], hbad = 0, hskip = 0, hseen = {};
+      hl.forEach(function (line) {
+        var pr = line.split(/[,\t，、]/);
+        var hnm = String(pr[0] || '').trim(), cp = parseInt(norm(pr[1]), 10);
+        if (!hnm || isNaN(cp) || cp < 0 || pr.length < 3) { hbad++; return; }
+        if (hseen[hnm] || S.hospitals.some(function (x) { return x.name === hnm; })) { hskip++; return; }
+        hseen[hnm] = 1;
+        var o = { name: hnm, cap: cp };
+        HKEYS.forEach(function (kk, i) { o[kk] = yes(pr[2 + i]); });
+        hitems.push(o);
+      });
+      if (!hitems.length) { ui.hBulkMsg = '登録できる病院がありません（形式が不正 ' + hbad + '件、登録済み ' + hskip + '件）。'; renderBody(); return; }
+      var hbase = Date.now();
+      Promise.all(hitems.map(function (o, j) { o.ord = hbase + j; return db.collection('hospitals').add(o); })).then(function () {
+        ui.hBulkMsg = hitems.length + '件を登録しました。' + (hskip ? '登録済みの ' + hskip + '件はスキップ。' : '') + (hbad ? '形式が不正な ' + hbad + '件は登録していません。' : '');
+        renderBody();
+      }).catch(function (err) { ui.hBulkMsg = '登録できませんでした。一部だけ登録されている可能性があります。病院の一覧を確認してください。'; renderBody(); failed(err); });
     } else if (kind === 'addMethod') {
       var mname = String(fd.get('name') || '').trim();
       n = parseInt(fd.get('min'), 10);
@@ -1130,7 +1176,7 @@ window.makeDb = function () {
       if (!no) return;
       if (!validId(no)) { ui.err = '症例番号は半角の英数字（記号は - _ . のみ）で入力してください。'; renderBanner(); return; }
       if (S.caseMap[no]) { ui.err = '症例 ' + no + ' はすでに登録されています。'; renderBanner(); return; }
-      db.doc('cases/' + no).set({ memo: String(fd.get('memo') || '').trim(), preg: !!fd.get('preg'), child: !!fd.get('child'), ord: Date.now() })
+      db.doc('cases/' + no).set({ memo: String(fd.get('memo') || '').trim(), preg: !!fd.get('preg'), child: !!fd.get('child'), trauma: !!fd.get('trauma'), brain: !!fd.get('brain'), burn: !!fd.get('burn'), tag: /^(red|yellow|green)$/.test(fd.get('tag')) ? fd.get('tag') : '', ord: Date.now() })
         .then(function () { f.reset(); var i = document.getElementById('cn'); if (i) i.focus(); }).catch(failed);
     } else if (kind === 'bulkCases') {
       var lines = String(fd.get('bulk') || '').split(/\r?\n/).filter(function (l) { return l.trim(); });
@@ -1142,7 +1188,7 @@ window.makeDb = function () {
         if (S.caseMap[no2] || seen[no2]) { skip++; return; }
         seen[no2] = 1;
         var kindTxt = (parts[1] || '').trim();
-        items.push({ no: no2, memo: parts.slice(2).join(' ').trim(), preg: /妊/.test(kindTxt), child: /児/.test(kindTxt) });
+        items.push({ no: no2, memo: parts.slice(2).join(' ').trim(), preg: /妊/.test(kindTxt), child: /児/.test(kindTxt), trauma: /外傷/.test(kindTxt), brain: /脳/.test(kindTxt), burn: /熱傷|熱/.test(kindTxt), tag: /赤/.test(kindTxt) ? 'red' : /黄/.test(kindTxt) ? 'yellow' : /緑/.test(kindTxt) ? 'green' : '' });
       });
       if (!items.length) { ui.bulkMsg = bad || skip ? ('登録できる症例がありません（番号が不正 ' + bad + '件、登録済み ' + skip + '件）。') : '登録する行がありません。'; renderBody(); return; }
       var chain = Promise.resolve(), base = Date.now();
@@ -1150,7 +1196,7 @@ window.makeDb = function () {
         (function (chunk, off) {
           chain = chain.then(function () {
             return Promise.all(chunk.map(function (it, j) {
-              return db.doc('cases/' + it.no).set({ memo: it.memo, preg: it.preg, child: it.child, ord: base + off + j });
+              return db.doc('cases/' + it.no).set({ memo: it.memo, preg: it.preg, child: it.child, trauma: it.trauma, brain: it.brain, burn: it.burn, tag: it.tag, ord: base + off + j });
             }));
           });
         })(items.slice(i, i + 10), i);
@@ -1184,12 +1230,12 @@ window.makeDb = function () {
     ui.dbState = 'ok';
     renderAll();
     sub('config', 'cfg', function (id, v) { return { id: id, showReason: v.showReason !== false, pinHash: String(v.pinHash || ''), pinSalt: String(v.pinSalt || ''), ord: 0, name: id }; });
-    sub('hospitals', 'hospitals', function (id, v) { return { id: id, name: String(v.name || ''), cap: +v.cap || 0, preg: !!v.preg, ped: !!v.ped, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('hospitals', 'hospitals', function (id, v) { return { id: id, name: String(v.name || ''), cap: +v.cap || 0, preg: !!v.preg, ped: !!v.ped, trauma: v.trauma !== false, brain: v.brain !== false, burn: v.burn !== false, red: v.red !== false, yellow: v.yellow !== false, green: v.green !== false, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('teams', 'teams', function (id, v) { return { id: id, name: String(v.name || ''), ord: +v.ord || 0 }; });
     sub('supplies', 'supplies', function (id, v) { return { id: id, name: String(v.name || ''), stock: +v.stock || 0, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('procedures', 'procs', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, needs: (v.needs && typeof v.needs === 'object') ? v.needs : {}, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('treatments', 'treats', function (id, v) { return { id: id, team: String(v.team || ''), caseNo: String(v.caseNo || ''), pid: String(v.pid || ''), pname: String(v.pname || ''), min: +v.min || 0, items: Array.isArray(v.items) ? v.items : [], t: +v.t || 0 }; });
-    sub('cases', 'cases', function (id, v) { return { no: id, memo: String(v.memo || ''), preg: !!v.preg, child: !!v.child, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('cases', 'cases', function (id, v) { return { no: id, memo: String(v.memo || ''), preg: !!v.preg, child: !!v.child, trauma: !!v.trauma, brain: !!v.brain, burn: !!v.burn, tag: /^(red|yellow|green)$/.test(v.tag) ? v.tag : '', ord: +v.ord || 0, sample: !!v.sample }; });
     sub('methods', 'methods', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('transports', 'log', function (id, v) { var ci = id.indexOf(':'); return { id: id, team: String(v.team || 'a'), caseNo: String(v.caseNo || (ci >= 0 ? id.slice(ci + 1) : id)), hid: String(v.hid || ''), hname: String(v.hname || ''), mid: String(v.mid || ''), mname: String(v.mname || ''), min: +v.min || 0, t: +v.t || 0 }; });
     renderBanner();

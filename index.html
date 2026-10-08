@@ -1,0 +1,1199 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>搬送判定ツール</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@700;900&display=swap">
+<style>
+/* Layout: 運営スタッフが複数端末で使う判定ツール。判定タブは「症例番号の入力 → 搬送手段 → 搬送先カード → 判定結果」の縦並び */
+:root {
+  --bg: #eef1f6;
+  --surface: #ffffff;
+  --fg: #172033;
+  --muted: #5a6578;
+  --line: #d6dce6;
+  --accent: #1f4f8f;
+  --accent-fg: #ffffff;
+  --accent-soft: #e2ebf7;
+  --ok: #17734a;
+  --ok-bg: #def3e7;
+  --ng: #b0271f;
+  --ng-bg: #fbe3e0;
+  --warn: #7d5200;
+  --warn-bg: #fbefcf;
+  --preg: #a3306b;
+  --preg-bg: #f9e3ee;
+  --child: #1c6a8a;
+  --child-bg: #dff0f7;
+  --font-display: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161f;
+    --surface: #1a212d;
+    --fg: #e6ebf3;
+    --muted: #98a3b6;
+    --line: #2f3a4b;
+    --accent: #7fb0f0;
+    --accent-fg: #0e1622;
+    --accent-soft: #223149;
+    --ok: #6fd6a0;
+    --ok-bg: #173a2b;
+    --ng: #ff9a91;
+    --ng-bg: #4a1f1c;
+    --warn: #f0c970;
+    --warn-bg: #43330f;
+    --preg: #f2a4c8;
+    --preg-bg: #46202f;
+    --child: #8fd3ee;
+    --child-bg: #173543;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161f;
+  --surface: #1a212d;
+  --fg: #e6ebf3;
+  --muted: #98a3b6;
+  --line: #2f3a4b;
+  --accent: #7fb0f0;
+  --accent-fg: #0e1622;
+  --accent-soft: #223149;
+  --ok: #6fd6a0;
+  --ok-bg: #173a2b;
+  --ng: #ff9a91;
+  --ng-bg: #4a1f1c;
+  --warn: #f0c970;
+  --warn-bg: #43330f;
+  --preg: #f2a4c8;
+  --preg-bg: #46202f;
+  --child: #8fd3ee;
+  --child-bg: #173543;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+* { box-sizing: border-box; }
+.wrap { max-width: 960px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 14px; }
+h1 { font-family: var(--font-display); font-weight: 900; font-size: 1.7rem; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+.sub { color: var(--muted); font-size: .85rem; }
+.muted { color: var(--muted); }
+nav.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 18px; overflow-x: auto; }
+nav.tabs button { font: inherit; font-weight: 500; background: none; border: 0; color: var(--muted); padding: 10px 16px; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; }
+nav.tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.label { display: block; font-size: .78rem; letter-spacing: .08em; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+select, input[type=text], input[type=number], input[type=password], textarea {
+  font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; min-width: 0; max-width: 100%;
+}
+input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+#caseNo, #tCaseNo { width: 100%; font-family: var(--font-display); font-weight: 900; font-size: 2.2rem; letter-spacing: .04em; padding: 8px 14px; }
+.chip { display: inline-block; font-size: .75rem; font-weight: 700; padding: 1px 8px; border-radius: 4px; margin-right: 4px; }
+.chip.preg { color: var(--preg); background: var(--preg-bg); }
+.chip.child { color: var(--child); background: var(--child-bg); }
+.chip.none { color: var(--muted); background: var(--bg); }
+.caseinfo { margin-top: 10px; min-height: 28px; }
+.twocol { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.mrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.mbtn { font: inherit; color: var(--fg); background: var(--bg); border: 2px solid var(--line); border-radius: 8px; padding: 8px 14px; cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.mbtn:hover { border-color: var(--accent); }
+.mbtn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.mbtn .mn { font-weight: 700; overflow-wrap: anywhere; }
+.mbtn.short { opacity: .65; }
+.mbtn .ps { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; text-align: left; }
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.srow:first-of-type { border-top: 0; }
+.srow .sn { font-variant-numeric: tabular-nums; color: var(--muted); }
+.srow .sn b { color: var(--fg); font-family: var(--font-display); font-weight: 900; font-size: 1.2rem; }
+.srow .meter { grid-column: 1 / -1; }
+.num { width: 84px; }
+.needs { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.mbtn .mt { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.teamsw { display: flex; gap: 8px; flex-wrap: wrap; }
+.teamsw button { font: inherit; font-family: var(--font-display); font-weight: 900; font-size: 1.15rem; flex: 1 1 140px; padding: 12px 16px; border-radius: 8px; border: 2px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+.teamsw button:hover { border-color: var(--accent); }
+.teamsw button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.hgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.hcard { text-align: left; font: inherit; color: var(--fg); background: var(--bg); border: 2px solid var(--line); border-radius: 8px; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.hcard:hover { border-color: var(--accent); }
+.hcard[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.hcard.full { opacity: .75; }
+.hname { font-weight: 700; overflow-wrap: anywhere; }
+.slots { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+.slots .n { font-family: var(--font-display); font-weight: 900; font-size: 2rem; line-height: 1; }
+.slots .of { color: var(--muted); font-size: .85rem; }
+.meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); }
+.hcard.full .meter i { background: var(--ng); }
+.caps { font-size: .8rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.caps b.y { color: var(--ok); }
+.caps b.n { color: var(--ng); }
+.result { border-radius: 10px; padding: 18px; border: 2px solid; }
+.result.ok { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+.result.ng { background: var(--ng-bg); border-color: var(--ng); color: var(--ng); }
+.result.warn { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+.result.idle { background: transparent; border: 2px dashed var(--line); color: var(--muted); }
+.result .verdict { font-family: var(--font-display); font-weight: 900; font-size: 2.2rem; line-height: 1.2; }
+.result .bigtime { font-family: var(--font-display); font-weight: 900; font-size: 1.6rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.result .bigtime b { font-size: 3rem; line-height: 1; }
+.result .detail { color: var(--fg); margin-top: 6px; }
+.result ul { margin: 8px 0 0; padding-left: 1.2em; color: var(--fg); }
+.btn { font: inherit; font-weight: 700; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); border-radius: 6px; padding: 9px 18px; cursor: pointer; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.big { font-size: 1.15rem; padding: 12px 28px; }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.danger { background: transparent; color: var(--ng); border-color: var(--ng); }
+.btn.danger.armed { background: var(--ng); color: #fff; }
+.btn.sm { padding: 4px 10px; font-size: .85rem; }
+.row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.empty { color: var(--muted); padding: 20px 4px; }
+.status { min-height: 1.6em; color: var(--ok); font-weight: 500; }
+.status.bad { color: var(--ng); }
+.toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; cursor: pointer; }
+.notice { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: .88rem; margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.notice.bad { background: var(--ng-bg); color: var(--ng); }
+.notice.info { background: var(--accent-soft); color: var(--accent); }
+.item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.item:first-child { border-top: 0; }
+.fields { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; min-width: 0; }
+.fields .nm { flex: 1 1 200px; }
+.fields .num { width: 84px; }
+.fields .cno { width: 90px; }
+.cb { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.addform { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.addform .grow { flex: 1 1 200px; }
+.err { color: var(--ng); font-weight: 500; }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; margin: 0 0 12px; }
+table.log { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.log th, table.log td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); }
+table.log th { font-size: .78rem; color: var(--muted); letter-spacing: .08em; border-top: 0; }
+.scroll { overflow-x: auto; }
+.modesw { display: inline-flex; border: 2px solid var(--line); border-radius: 8px; overflow: hidden; }
+.modesw button { font: inherit; font-weight: 700; font-size: .85rem; padding: 6px 14px; border: 0; background: var(--surface); color: var(--muted); cursor: pointer; }
+.modesw button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.pinform { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pinform input { width: 9.5rem; }
+.pinerr { color: var(--ng); font-size: .85rem; font-weight: 500; }
+.modetag { font-size: .85rem; font-weight: 700; color: var(--muted); border: 2px solid var(--line); border-radius: 8px; padding: 5px 12px; }
+.lrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: center; }
+.lrow:first-child { border-top: 0; }
+.lmain { overflow-wrap: anywhere; }
+.lsub { grid-column: 1; color: var(--muted); font-size: .88rem; font-variant-numeric: tabular-nums; }
+.lsub .cd { color: var(--accent); font-weight: 700; }
+.lact { grid-column: 2; grid-row: 1 / span 2; }
+.transit { display: flex; flex-direction: column; }
+.trow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 10px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.trow:first-of-type { border-top: 0; }
+.trow .cd { font-family: var(--font-display); font-weight: 900; font-size: 1.3rem; font-variant-numeric: tabular-nums; color: var(--accent); }
+td .cd { font-weight: 700; font-variant-numeric: tabular-nums; }
+textarea { width: 100%; min-height: 110px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; }
+@media (max-width: 520px) {
+  h1 { font-size: 1.4rem; }
+  .addform .btn { width: 100%; }
+  .addform .grow { flex-basis: 100%; }
+  .result .verdict { font-size: 1.8rem; }
+  #caseNo, #tCaseNo { font-size: 1.8rem; }
+  .item { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head><body>
+<div class="wrap">
+  <header class="top">
+    <h1>搬送判定ツール</h1>
+    <span class="sub">トリアージシミュレーション運営用</span>
+    <div id="modesw"></div>
+  </header>
+  <div id="app">
+    <div id="banner"></div>
+    <nav id="nav" class="tabs" role="tablist"></nav>
+    <div id="body"></div>
+  </div>
+</div>
+
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+/* Firestore アダプタ: アプリ本体が使う最小限の db API を Firebase Firestore で実装する */
+window.makeDb = function () {
+  var cfg = window.FIREBASE_CONFIG;
+  if (!cfg || !cfg.projectId || /^YOUR_/.test(cfg.projectId) || typeof firebase === 'undefined') return null;
+  firebase.initializeApp(cfg);
+  var fs = firebase.firestore();
+  function flat(patch) {
+    var o = {};
+    Object.keys(patch).forEach(function (k) {
+      var v = patch[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) Object.keys(v).forEach(function (s) { o[k + '.' + s] = v[s]; });
+      else o[k] = v;
+    });
+    return o;
+  }
+  function wrapSnap(s) { return { docs: s.docs, size: s.size, metadata: s.metadata }; }
+  function query(q) {
+    return {
+      where: function (f, op, v) { return query(q.where(f, op, v)); },
+      get: function () { return q.get().then(wrapSnap); },
+      onSnapshot: function (ok, ng) { return q.onSnapshot(function (s) { ok(wrapSnap(s)); }, ng); }
+    };
+  }
+  return {
+    collection: function (c) {
+      var ref = fs.collection(c), q = query(ref);
+      q.add = function (data) { return ref.add(data); };
+      return q;
+    },
+    doc: function (p) {
+      var ref = fs.doc(p);
+      return {
+        get: function () { return ref.get(); },
+        set: function (d) { return ref.set(d); },
+        update: function (patch) { return ref.update(flat(patch)); },
+        delete: function () { return ref.delete(); },
+        acquire: function (o) {
+          return fs.runTransaction(function (tx) {
+            return tx.get(ref).then(function (s) {
+              var now = Date.now(), cur = s.exists ? s.data() : null;
+              if (cur && cur.exp > now && cur.holder !== o.holder) return { acquired: false };
+              tx.set(ref, { holder: o.holder, exp: now + (o.ttlMs || 1000) });
+              return { acquired: true };
+            });
+          });
+        }
+      };
+    }
+  };
+};
+</script>
+<script>
+(function () {
+  var tabId = Math.random().toString(36).slice(2);
+  var db = null;
+  var ro = false;
+  var isAdmin = true; /* 誰でもスタッフモードへ切替可能。入るには認証コードが必要（設定後） */
+  var S = { hospitals: [], cases: [], methods: [], log: [], cfg: [], cfgReady: false, pinHash: '', pinSalt: '', showReason: true, supplies: [], procs: [], treats: [], supUsed: {}, teams: [], teamsReady: false, caseMap: {}, logMap: {}, usedBy: {} };
+  function teamOk(id) { for (var i = 0; i < S.teams.length; i++) if (S.teams[i].id === id) return true; return false; }
+  function teamName(id) { for (var i = 0; i < S.teams.length; i++) if (S.teams[i].id === id) return S.teams[i].name; return '削除されたチーム'; }
+  function loadMode() { try { return localStorage.getItem('triage-mode') === 'participant' ? 'participant' : 'staff'; } catch (e) { return 'staff'; } }
+  function isStaff() { return isAdmin && ui.mode === 'staff' && S.cfgReady && (!S.pinHash || ui.pinOk); }
+  function tabAllowed(t) { return isStaff() || t === 'judge' || t === 'treat'; }
+  function loadTeam() { try { return localStorage.getItem('triage-team') || null; } catch (e) { return null; } }
+  var ui = {
+    team: loadTeam(), tCase: '', pid: null, tdone: null, tbusy: false,
+    tab: 'judge', mode: loadMode(), caseNo: '', hid: null, mid: null, armed: null,
+    msg: '', msgBad: false, err: '', done: null, busy: false, filter: '', bulkMsg: '', dbState: 'loading'
+  };
+  var pending = false;
+  var timer = 0;
+
+  /* ---------- helpers ---------- */
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function norm(s) {
+    return String(s || '')
+      .replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 48); })
+      .replace(/[Ａ-Ｚａ-ｚ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/[　\s]+/g, '').trim();
+  }
+  function validId(s) { return /^[A-Za-z0-9_\-.~:@+]{1,50}$/.test(s) && s !== '.' && s !== '..'; }
+  function byNo(a, b) { return String(a.no).localeCompare(String(b.no), 'ja', { numeric: true }); }
+  function byOrd(a, b) { return (a.ord - b.ord) || String(a.name).localeCompare(String(b.name), 'ja'); }
+  function hosp(id) { for (var i = 0; i < S.hospitals.length; i++) if (S.hospitals[i].id === id) return S.hospitals[i]; return null; }
+  function meth(id) { for (var i = 0; i < S.methods.length; i++) if (S.methods[i].id === id) return S.methods[i]; return null; }
+  function supply(id) { for (var i = 0; i < S.supplies.length; i++) if (S.supplies[i].id === id) return S.supplies[i]; return null; }
+  function proc(id) { for (var i = 0; i < S.procs.length; i++) if (S.procs[i].id === id) return S.procs[i]; return null; }
+  function supRemaining(sp, team) { return Math.max(0, sp.stock - (S.supUsed[team + '|' + sp.id] || 0)); }
+  function shortages(p, team) {
+    var r = [];
+    Object.keys(p.needs).forEach(function (sid) {
+      var sp = supply(sid), q = +p.needs[sid] || 0;
+      if (!sp || q <= 0) return;
+      var have = supRemaining(sp, team);
+      if (q > have) r.push({ name: sp.name, need: q, have: have });
+    });
+    return r;
+  }
+  function procNeedsText(p) {
+    var t = Object.keys(p.needs).map(function (sid) {
+      var sp = supply(sid), q = +p.needs[sid] || 0;
+      return sp && q > 0 ? sp.name + '×' + q : '';
+    }).filter(Boolean).join('　');
+    return t || '物資なし';
+  }
+  function used(h, team) { return S.usedBy[team + '|' + h.id] || 0; }
+  function remaining(h, team) { return Math.max(0, h.cap - used(h, team)); }
+  function timeText(t) {
+    try { return new Date(t).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (e) { return ''; }
+  }
+  function index() {
+    S.showReason = true;
+    S.pinHash = ''; S.pinSalt = '';
+    S.cfg.forEach(function (c) { if (c.id === 'app') { S.showReason = c.showReason !== false; S.pinHash = c.pinHash || ''; S.pinSalt = c.pinSalt || ''; } });
+    S.caseMap = {}; S.logMap = {}; S.usedBy = {}; S.logByCase = {}; S.supUsed = {};
+    S.treats.forEach(function (t) { (t.items || []).forEach(function (it) { var k = t.team + '|' + it.sid; S.supUsed[k] = (S.supUsed[k] || 0) + (+it.qty || 0); }); });
+    S.cases.forEach(function (c) { S.caseMap[c.no] = c; });
+    S.log.forEach(function (l) {
+      S.logMap[l.team + '|' + l.caseNo] = l;
+      S.usedBy[l.team + '|' + l.hid] = (S.usedBy[l.team + '|' + l.hid] || 0) + 1;
+      (S.logByCase[l.caseNo] = S.logByCase[l.caseNo] || []).push(l);
+    });
+  }
+  function evaluate(c, h) {
+    var r = [];
+    if (c.preg && !h.preg) r.push('この病院は妊婦を受け入れできません');
+    if (c.child && !h.ped) r.push('この病院は小児を受け入れできません');
+    if (remaining(h, ui.team) <= 0) r.push('受け入れ可能人数に達しています（満床）');
+    return r;
+  }
+  function caseChips(c) {
+    var s = '';
+    if (c.preg) s += '<span class="chip preg">妊婦</span>';
+    if (c.child) s += '<span class="chip child">小児</span>';
+    return s;
+  }
+  function setStatus(t, bad) { ui.msg = t; ui.msgBad = !!bad; }
+  function fmt(ms) {
+    var s = Math.ceil(ms / 1000), m = Math.floor(s / 60), r = s % 60;
+    return m + ':' + (r < 10 ? '0' : '') + r;
+  }
+  function endOf(l) { return (l.t || 0) + l.min * 60000; }
+  function cdHtml(l, doneText) {
+    var end = endOf(l), rem = end - Date.now();
+    var dt = doneText || '到着';
+    return '<span class="cd" data-end="' + end + '" data-dt="' + esc(dt) + '">' + (rem > 0 ? '残り ' + fmt(rem) : dt) + '</span>';
+  }
+  function transitHtml() {
+    var now = Date.now();
+    var list = S.log.filter(function (l) { return l.team === ui.team && endOf(l) > now; }).sort(function (a, b) { return endOf(a) - endOf(b); });
+    if (!list.length) return '';
+    return '<div class="panel"><h2>搬送中（' + list.length + '件）</h2><div class="transit">' + list.map(function (l) {
+      var h = hosp(l.hid);
+      return '<div class="trow"><span>症例 ' + esc(l.caseNo) + ' → ' + esc(l.hname || (h ? h.name : '不明')) + '（' + esc(l.mname) + '）</span>' + cdHtml(l) + '</div>';
+    }).join('') + '</div></div>';
+  }
+
+  /* ---------- live data ---------- */
+  function sub(col, key, fn) {
+    db.collection(col).onSnapshot(function (snap) {
+      S[key] = snap.docs.map(function (d) { return fn(d.id, d.data() || {}); });
+      S.hospitals.sort(byOrd); S.methods.sort(byOrd); S.teams.sort(byOrd); S.supplies.sort(byOrd); S.procs.sort(byOrd);
+      if (key === 'teams') {
+        S.teamsReady = true;
+        if (ui.team && !teamOk(ui.team) && !(snap.metadata && snap.metadata.fromCache)) ui.team = null;
+      }
+      index();
+      if (key === 'cfg') {
+        S.cfgReady = true;
+        if (S.pinHash && !ui.pinOk && ui.mode === 'staff') ui.mode = 'participant';
+        if (!tabAllowed(ui.tab)) ui.tab = 'judge';
+        renderMode(); renderNav();
+      }
+      scheduleRefresh();
+    }, function (e) {
+      ui.dbState = 'error'; renderBanner();
+    });
+  }
+  function scheduleRefresh() {
+    if (timer) return;
+    timer = setTimeout(function () { timer = 0; refresh(); }, 40);
+  }
+  function isEditing() {
+    var a = document.activeElement;
+    return !!(a && a.closest && a.closest('#body') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  }
+  function refresh() {
+    renderBanner();
+    if (ui.tab === 'judge' || ui.tab === 'treat') { if (ui.jsig !== judgeSig()) renderBody(); else renderDyn(); return; }
+    if (isEditing()) {
+      pending = true;
+      if (ui.tab === 'cases' && document.activeElement.id === 'caseFilter') renderCaseList();
+      return;
+    }
+    renderBody();
+  }
+  document.addEventListener('focusout', function () {
+    setTimeout(function () { if (pending && !isEditing()) { pending = false; renderBody(); } }, 60);
+  });
+
+  /* ---------- writes ---------- */
+  function canWrite() {
+    if (!db) { ui.err = '同期に接続できていません。'; renderBanner(); return false; }
+    if (ro) { ui.err = 'このリンクでは閲覧のみです。編集するには編集権限が必要です。'; renderBanner(); return false; }
+    ui.err = '';
+    return true;
+  }
+  function failed(e) {
+    ui.err = '保存できませんでした（' + (e && e.code ? e.code : '通信エラー') + '）。もう一度お試しください。';
+    renderBanner();
+  }
+  function delAll(paths) {
+    var chain = Promise.resolve();
+    for (var i = 0; i < paths.length; i += 10) {
+      (function (chunk) {
+        chain = chain.then(function () { return Promise.all(chunk.map(function (p) { return db.doc(p).delete(); })); });
+      })(paths.slice(i, i + 10));
+    }
+    return chain;
+  }
+
+  /* ---------- views ---------- */
+  function armBtn(key, label, armedLabel, act, extra) {
+    var on = ui.armed === key;
+    return '<button type="button" class="btn danger sm' + (on ? ' armed' : '') + '" data-act="' + act + '" data-key="' + esc(key) + '" ' + (extra || '') + '>' + (on ? armedLabel : label) + '</button>';
+  }
+
+  function renderBanner() {
+    var h = '';
+    if (ui.dbState === 'loading') h += '<div class="notice info">同期に接続しています…</div>';
+    if (ui.dbState === 'none') h += '<div class="notice bad">Firebase が未設定です。firebase-config.js に設定値を入れてください（README の手順）。</div>';
+    if (ui.dbState === 'error') h += '<div class="notice bad">同期が途切れました。ページを開き直してください。</div>';
+    if (ro) h += '<div class="notice">このリンクでは閲覧のみです。判定や登録をするには、共有設定で編集できる権限（Contributor以上）が必要です。</div>';
+    if (ui.err) h += '<div class="notice bad" role="alert">' + esc(ui.err) + '</div>';
+    var sample = S.hospitals.some(function (x) { return x.sample; }) || S.cases.some(function (x) { return x.sample; }) || S.methods.some(function (x) { return x.sample; }) || S.supplies.some(function (x) { return x.sample; }) || S.procs.some(function (x) { return x.sample; });
+    if (sample && isStaff()) h += '<div class="notice">サンプルデータが入っています。本番前に削除してください。 ' + armBtn('clearsample', 'サンプルを削除', 'もう一度押すと削除', 'clearSample') + '</div>';
+    document.getElementById('banner').innerHTML = h;
+  }
+
+  function renderNav() {
+    var tabs = [['judge', '判定'], ['treat', '処置'], ['cases', '症例'], ['hospitals', '病院'], ['methods', '搬送手段'], ['setup', '処置設定'], ['teams', 'チーム'], ['log', '記録']];
+    tabs = tabs.filter(function (t) { return tabAllowed(t[0]); });
+    document.getElementById('nav').innerHTML = tabs.map(function (t) {
+      return '<button type="button" role="tab" data-act="tab" data-tab="' + t[0] + '" aria-selected="' + (ui.tab === t[0]) + '">' + t[1] + '</button>';
+    }).join('');
+  }
+
+  function renderDyn() {
+    if (ui.tab === 'judge') renderJudgeDyn();
+    else if (ui.tab === 'treat') renderTreatDyn();
+  }
+  function teamGateHtml() {
+    if (!S.teamsReady) return '<div class="result idle">チームを読み込んでいます…</div>';
+    if (!S.teams.length) return '<div class="result idle">チームが未登録です。「チーム」タブでチームを追加してください。</div>';
+    return '';
+  }
+  function teamSwitchHtml() {
+    return '<div class="panel"><span class="label">担当チーム（この端末で操作するチーム）</span><div class="teamsw">' + S.teams.map(function (t) {
+      return '<button type="button" data-act="pickTeam" data-id="' + esc(t.id) + '" aria-pressed="' + (ui.team === t.id) + '">' + esc(t.name) + '</button>';
+    }).join('') + '</div></div>';
+  }
+  function viewJudge() {
+    var g = teamGateHtml(); if (g) return g;
+    var sw = teamSwitchHtml();
+    if (!teamOk(ui.team)) return '<div class="stack">' + sw + '<div class="result idle">操作するチームを選んでください。チームごとに、病院の残り人数と搬送記録が別々になります。</div></div>';
+    return '<div class="stack">' + sw +
+      '<div class="panel"><label class="label" for="caseNo">症例番号</label>' +
+      '<input type="text" id="caseNo" inputmode="numeric" autocomplete="off" enterkeyhint="done" placeholder="番号を入力" value="' + esc(ui.caseNo) + '">' +
+      '<div class="caseinfo" id="cinfo" aria-live="polite"></div></div>' +
+      '<div id="jdyn" class="stack"></div></div>';
+  }
+
+  /* ---- 処置 ---- */
+  function viewTreat() {
+    var g = teamGateHtml(); if (g) return g;
+    var sw = teamSwitchHtml();
+    if (!teamOk(ui.team)) return '<div class="stack">' + sw + '<div class="result idle">操作するチームを選んでください。チームごとに、物資の残りと処置の記録が別々になります。</div></div>';
+    return '<div class="stack">' + sw +
+      '<div class="panel"><label class="label" for="tCaseNo">症例番号</label>' +
+      '<input type="text" id="tCaseNo" inputmode="numeric" autocomplete="off" enterkeyhint="done" placeholder="番号を入力" value="' + esc(ui.tCase) + '">' +
+      '<div class="caseinfo" id="tinfo" aria-live="polite"></div></div>' +
+      '<div id="tdyn" class="stack"></div></div>';
+  }
+  function tInfoHtml() {
+    if (!ui.tCase) return '<span class="muted">症例番号を入力すると、妊婦・小児の区分が表示されます。</span>';
+    var c = S.caseMap[ui.tCase];
+    if (!c) return '<span class="err">症例 ' + esc(ui.tCase) + ' は登録されていません。</span>';
+    var n = S.treats.filter(function (t) { return t.team === ui.team && t.caseNo === c.no; }).length;
+    return '<strong>症例 ' + esc(c.no) + '</strong> ' + caseChips(c) + (c.memo ? ' <span class="muted">' + esc(c.memo) + '</span>' : '') + (n ? ' <span class="chip child">処置 ' + n + '件</span>' : '');
+  }
+  function treatResultHtml() {
+    if (ui.tdone) {
+      var d = ui.tdone;
+      return '<div class="result ok"><div class="verdict">処置を開始しました</div>' +
+        '<div class="bigtime">処置時間 <b>' + d.min + '</b>分</div>' +
+        '<div class="detail">' + esc(teamName(d.team)) + '　症例 ' + esc(d.no) + '：' + esc(d.pname) + (d.usedText ? '　使用物資：' + esc(d.usedText) : '') + '</div></div>';
+    }
+    var c = S.caseMap[ui.tCase], p = proc(ui.pid);
+    if (!ui.tCase) return '<div class="result idle">症例番号を入力してください。</div>';
+    if (!c) return '<div class="result idle">登録されている症例番号を入力してください。</div>';
+    if (!p) return '<div class="result idle">処置を選んでください。</div>';
+    var sh = shortages(p, ui.team);
+    if (sh.length) {
+      return '<div class="result ng"><div class="verdict">物資が足りません</div><ul>' + sh.map(function (x) {
+        return '<li>' + esc(x.name) + '：必要 ' + x.need + '個 / 残り ' + x.have + '個</li>';
+      }).join('') + '</ul></div>';
+    }
+    return '<div class="result ok"><div class="verdict">処置できます</div>' +
+      '<div class="detail">実施しますか？　症例 ' + esc(c.no) + '：' + esc(p.name) + '（' + p.min + '分）　必要物資：' + esc(procNeedsText(p)) + '</div>' +
+      '<div class="row" style="margin-top:12px"><button type="button" class="btn big" data-act="confirmTreat"' + ((ui.tbusy || ro) ? ' disabled' : '') + '>処置を開始する</button></div></div>';
+  }
+  function renderTreatDyn() {
+    var info = document.getElementById('tinfo'), dyn = document.getElementById('tdyn');
+    if (!info || !dyn) return;
+    info.innerHTML = tInfoHtml();
+    var pb = S.procs.length ? S.procs.map(function (p) {
+      var short = shortages(p, ui.team).length > 0;
+      return '<button type="button" class="mbtn' + (short ? ' short' : '') + '" data-act="pickProc" data-id="' + esc(p.id) + '" aria-pressed="' + (ui.pid === p.id) + '">' +
+        '<span class="mn">' + esc(p.name) + '</span><span class="mt">' + p.min + '分' + (short ? '　物資不足' : '') + '</span><span class="ps">' + esc(procNeedsText(p)) + '</span></button>';
+    }).join('') : '<div class="empty">処置が未登録です。「処置設定」タブで登録してください。</div>';
+    var sb = S.supplies.length ? S.supplies.map(function (sp) {
+      var rem = supRemaining(sp, ui.team);
+      var pct = sp.stock > 0 ? Math.min(100, Math.round((sp.stock - rem) / sp.stock * 100)) : 100;
+      return '<div class="srow"><span>' + esc(sp.name) + '</span><span class="sn">残り <b>' + rem + '</b> / ' + sp.stock + '</span><span class="meter"><i style="width:' + pct + '%"></i></span></div>';
+    }).join('') : '<div class="empty">物資が未登録です。「処置設定」タブで登録してください。</div>';
+    var now = Date.now();
+    var act2 = S.treats.filter(function (t) { return t.team === ui.team && endOf(t) > now; }).sort(function (x, y) { return endOf(x) - endOf(y); });
+    var activeHtml = act2.length ? '<div class="panel"><h2>処置中（' + act2.length + '件）</h2><div class="transit">' + act2.map(function (t) {
+      return '<div class="trow"><span>症例 ' + esc(t.caseNo) + '：' + esc(t.pname) + '</span>' + cdHtml(t, '完了') + '</div>';
+    }).join('') + '</div></div>' : '';
+    dyn.innerHTML =
+      '<div class="panel"><span class="label">処置</span><div class="mrow">' + pb + '</div></div>' +
+      '<div aria-live="polite">' + treatResultHtml() + '</div>' +
+      '<div class="status' + (ui.msgBad ? ' bad' : '') + '" aria-live="polite">' + esc(ui.msg) + '</div>' +
+      activeHtml +
+      '<div class="panel"><span class="label">物資の残り（' + esc(teamName(ui.team)) + '）</span>' + sb + '</div>';
+  }
+
+  async function confirmTreat() {
+    if (ui.tbusy || !canWrite()) return;
+    var c = S.caseMap[ui.tCase], pr = proc(ui.pid), team = ui.team;
+    if (!c || !pr || !team) return;
+    ui.tbusy = true; setStatus('', false); renderTreatDyn();
+    try {
+      var lock = null;
+      for (var i = 0; i < 4; i++) {
+        lock = await db.doc('locks/treat:' + team).acquire({ holder: tabId, ttlMs: 1000 });
+        if (lock.acquired) break;
+        await sleep(600);
+      }
+      if (!lock || !lock.acquired) { setStatus('他の端末が処置を登録中です。もう一度「処置を開始する」を押してください。', true); return; }
+      var fresh = await db.collection('treatments').where('team', '==', team).get();
+      var usedNow = {};
+      fresh.docs.forEach(function (d) { ((d.data() || {}).items || []).forEach(function (it) { usedNow[it.sid] = (usedNow[it.sid] || 0) + (+it.qty || 0); }); });
+      var items = [], bad = [];
+      Object.keys(pr.needs).forEach(function (sid) {
+        var sp = supply(sid), q = +pr.needs[sid] || 0;
+        if (!sp || q <= 0) return;
+        if (sp.stock - (usedNow[sid] || 0) < q) bad.push(sp.name);
+        items.push({ sid: sid, name: sp.name, qty: q });
+      });
+      if (bad.length) { setStatus('他の端末の処置で ' + bad.join('、') + ' が不足しました。処置は開始していません。', true); return; }
+      await db.collection('treatments').add({ team: team, caseNo: c.no, pid: pr.id, pname: pr.name, min: pr.min, items: items, t: Date.now() });
+      ui.tdone = { team: team, no: c.no, pname: pr.name, min: pr.min, usedText: items.map(function (it) { return it.name + '×' + it.qty; }).join('　') };
+      ui.tCase = '';
+      var inp = document.getElementById('tCaseNo');
+      if (inp) { inp.value = ''; inp.focus(); }
+    } catch (e) {
+      setStatus('処置を開始できませんでした。通信を確認して、もう一度お試しください。', true);
+    } finally {
+      ui.tbusy = false; renderTreatDyn();
+    }
+  }
+
+  /* ---- 処置設定 ---- */
+  function viewSetup() {
+    var addS = '<form class="panel addform" data-form="addSupply">' +
+      '<div class="grow"><label class="label" for="sn">物資名</label><input type="text" id="sn" name="name" required placeholder="例：包帯" style="width:100%"></div>' +
+      '<div><label class="label" for="ss">在庫数（各チーム）</label><input type="number" id="ss" name="stock" min="0" value="10" required class="num"></div>' +
+      '<button class="btn" type="submit">追加</button></form>';
+    var listS = S.supplies.length ? S.supplies.map(function (sp) {
+      return '<div class="item"><div class="fields">' +
+        '<input class="nm" type="text" aria-label="物資名" value="' + esc(sp.name) + '" data-chg="sName" data-id="' + esc(sp.id) + '">' +
+        '<label class="cb">在庫数 <input class="num" type="number" min="0" value="' + sp.stock + '" data-chg="sStock" data-id="' + esc(sp.id) + '"></label>' +
+        '</div><div>' + armBtn('ds' + sp.id, '削除', 'もう一度押すと削除', 'delSupply', 'data-id="' + esc(sp.id) + '"') + '</div></div>';
+    }).join('') : '<div class="empty">物資が未登録です。</div>';
+
+    var needInputs = S.supplies.map(function (sp) {
+      return '<label class="cb">' + esc(sp.name) + ' <input class="num" type="number" min="0" value="0" name="need_' + esc(sp.id) + '"></label>';
+    }).join('');
+    var addP = '<form class="panel" data-form="addProc"><h2>処置を追加</h2><div class="addform">' +
+      '<div class="grow"><label class="label" for="pn">処置名</label><input type="text" id="pn" name="name" required placeholder="例：止血処置" style="width:100%"></div>' +
+      '<div><label class="label" for="pm">処置時間（分）</label><input type="number" id="pm" name="min" min="0" value="5" required class="num"></div></div>' +
+      '<span class="label" style="margin-top:12px">必要な物資の数（使わない物資は0）</span>' +
+      (needInputs ? '<div class="needs">' + needInputs + '</div>' : '<div class="muted">先に上で物資を登録してください。</div>') +
+      '<div class="row" style="margin-top:12px"><button class="btn" type="submit">処置を追加</button></div></form>';
+    var listP = S.procs.length ? S.procs.map(function (pr) {
+      var needs = S.supplies.map(function (sp) {
+        return '<label class="cb">' + esc(sp.name) + ' <input class="num" type="number" min="0" value="' + (+pr.needs[sp.id] || 0) + '" data-chg="pNeed" data-id="' + esc(pr.id) + '" data-sid="' + esc(sp.id) + '"></label>';
+      }).join('');
+      return '<div class="item"><div class="stack" style="gap:8px;min-width:0"><div class="fields">' +
+        '<input class="nm" type="text" aria-label="処置名" value="' + esc(pr.name) + '" data-chg="pName" data-id="' + esc(pr.id) + '">' +
+        '<label class="cb">処置時間 <input class="num" type="number" min="0" value="' + pr.min + '" data-chg="pMin" data-id="' + esc(pr.id) + '"> 分</label></div>' +
+        (needs ? '<div class="needs">' + needs + '</div>' : '') + '</div>' +
+        '<div>' + armBtn('dp' + pr.id, '削除', 'もう一度押すと削除', 'delProc', 'data-id="' + esc(pr.id) + '"') + '</div></div>';
+    }).join('') : '<div class="empty">処置が未登録です。</div>';
+    return '<div class="stack">' + addS + '<div class="panel"><h2>登録済みの物資</h2><p class="sub" style="margin-top:0">在庫数は、各チームに同じ数だけ用意されます。</p>' + listS + '</div>' +
+      addP + '<div class="panel"><h2>登録済みの処置</h2>' + listP + '</div></div>';
+  }
+  function treatLogHtml() {
+    var rows = S.treats.slice().sort(function (x, y) { return (y.t || 0) - (x.t || 0); }).map(function (t) {
+      var used2 = (t.items || []).map(function (it) { return it.name + '×' + it.qty; }).join('　');
+      return '<div class="lrow"><div class="lmain"><strong>症例 ' + esc(t.caseNo) + '</strong>：' + esc(t.pname) + ' <span class="chip child">' + esc(teamName(t.team)) + '</span></div>' +
+        '<div class="lsub">' + timeText(t.t) + '　' + t.min + '分　' + cdHtml(t, '完了') + (used2 ? '　' + esc(used2) : '') + '</div>' +
+        '<div class="lact">' + armBtn('dtr' + t.id, '取消', 'もう一度押すと取消', 'delTreat', 'data-id="' + esc(t.id) + '"') + '</div></div>';
+    }).join('');
+    return '<div class="panel"><h2>処置記録</h2>' + (rows ? '<div>' + rows + '</div>' : '<div class="empty">まだ処置は登録されていません。</div>') + '</div>';
+  }
+  function supplySummaryHtml() {
+    var rows = S.supplies.map(function (sp) {
+      return '<tr><td>' + esc(sp.name) + '</td>' + S.teams.map(function (t) { return '<td>' + supRemaining(sp, t.id) + ' / ' + sp.stock + '</td>'; }).join('') + '</tr>';
+    }).join('');
+    return '<div class="panel"><h2>物資の残り（残り / 在庫）</h2><div class="scroll"><table class="log"><thead><tr><th>物資</th>' + S.teams.map(function (t) { return '<th>' + esc(t.name) + '</th>'; }).join('') + '</tr></thead><tbody>' + (rows || '<tr><td colspan="3">物資が未登録です</td></tr>') + '</tbody></table></div></div>';
+  }
+
+  function infoHtml() {
+    if (!ui.caseNo) return '<span class="muted">症例番号を入力すると、妊婦・小児の区分が表示されます。</span>';
+    var c = S.caseMap[ui.caseNo];
+    if (!c) return '<span class="err">症例 ' + esc(ui.caseNo) + ' は登録されていません。</span>';
+    var t = S.logMap[ui.team + '|' + c.no];
+    return '<strong>症例 ' + esc(c.no) + '</strong> ' + caseChips(c) + (c.memo ? ' <span class="muted">' + esc(c.memo) + '</span>' : '') + (t ? ' <span class="chip child">搬送済</span>' : '');
+  }
+
+  function resultHtml() {
+    if (ui.done) {
+      var d = ui.done;
+      return '<div class="result ok"><div class="verdict">搬送しました</div>' +
+        '<div class="bigtime">搬送時間 <b>' + d.min + '</b>分</div>' +
+        '<div class="detail">' + esc(teamName(d.team)) + '　症例 ' + esc(d.no) + ' → ' + esc(d.hname) + '（' + esc(d.mname) + '）</div></div>';
+    }
+    var c = S.caseMap[ui.caseNo], h = hosp(ui.hid), m = meth(ui.mid);
+    if (!ui.caseNo) return '<div class="result idle">症例番号を入力してください。</div>';
+    if (!c) return '<div class="result idle">登録されている症例番号を入力してください。</div>';
+    if (!h) return '<div class="result idle">搬送先の病院を選んでください。</div>';
+    var prev = S.logMap[ui.team + '|' + c.no];
+    if (prev) {
+      return '<div class="result warn"><div class="verdict">搬送済み</div><div class="detail">症例 ' + esc(c.no) +
+        ' はすでに ' + esc(prev.hname || (hosp(prev.hid) || {}).name || '不明な病院') + ' へ搬送が確定しています。変更する場合は「記録」タブで取り消してください。</div></div>';
+    }
+    var reasons = evaluate(c, h);
+    if (reasons.length) {
+      return '<div class="result ng"><div class="verdict">搬送不可</div>' +
+        (S.showReason ? '<ul>' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' : '<div class="detail">この病院では受け入れできません。</div>') + '</div>';
+    }
+    return '<div class="result ok"><div class="verdict">搬送可能</div>' +
+      '<div class="detail">搬送しますか？　症例 ' + esc(c.no) + ' → ' + esc(h.name) + '（残り ' + remaining(h, ui.team) + ' 名）' +
+      (m ? '　搬送手段：' + esc(m.name) + '（' + m.min + '分）' : '') + '</div>' +
+      '<div class="row" style="margin-top:12px"><button type="button" class="btn big" data-act="confirm"' + ((!m || ui.busy || ro) ? ' disabled' : '') + '>搬送する</button>' +
+      (!m ? '<span class="detail">搬送手段を選んでください。</span>' : '') + '</div></div>';
+  }
+
+  function renderJudgeDyn() {
+    var info = document.getElementById('cinfo');
+    var dyn = document.getElementById('jdyn');
+    if (!info || !dyn) return;
+    info.innerHTML = infoHtml();
+
+    var mbtns = S.methods.length ? S.methods.map(function (m) {
+      return '<button type="button" class="mbtn" data-act="pickMethod" data-id="' + esc(m.id) + '" aria-pressed="' + (ui.mid === m.id) + '"><span class="mn">' + esc(m.name) + '</span><span class="mt">' + m.min + '分</span></button>';
+    }).join('') : '<div class="empty">搬送手段が未登録です。「搬送手段」タブで登録してください。</div>';
+
+    var cards = S.hospitals.length ? S.hospitals.map(function (x) {
+      var rem = remaining(x, ui.team);
+      var pct = x.cap > 0 ? Math.min(100, Math.round(used(x, ui.team) / x.cap * 100)) : 100;
+      return '<button type="button" class="hcard' + (rem <= 0 ? ' full' : '') + '" data-act="pickHosp" data-id="' + esc(x.id) + '" aria-pressed="' + (ui.hid === x.id) + '">' +
+        '<span class="hname">' + esc(x.name) + '</span>' +
+        '<span class="slots"><span class="n">' + rem + '</span><span class="of">残 / 定員 ' + x.cap + '</span></span>' +
+        '<span class="meter"><i style="width:' + pct + '%"></i></span>' +
+        '<span class="caps"><span>妊婦 <b class="' + (x.preg ? 'y' : 'n') + '">' + (x.preg ? '○' : '×') + '</b></span>' +
+        '<span>小児 <b class="' + (x.ped ? 'y' : 'n') + '">' + (x.ped ? '○' : '×') + '</b></span></span></button>';
+    }).join('') : '<div class="empty">病院が未登録です。「病院」タブで登録してください。</div>';
+
+    dyn.innerHTML =
+      '<div class="panel"><span class="label">搬送手段</span><div class="mrow">' + mbtns + '</div></div>' +
+      '<div class="panel"><span class="label">搬送先</span><div class="hgrid">' + cards + '</div></div>' +
+      '<div aria-live="polite">' + resultHtml() + '</div>' +
+      '<div class="status' + (ui.msgBad ? ' bad' : '') + '" aria-live="polite">' + esc(ui.msg) + '</div>' +
+      transitHtml() +
+      (isStaff() ? '<label class="toggle"><input type="checkbox" id="showReason" data-chg="showReason"' + (S.showReason ? ' checked' : '') + '> 搬送不可の理由を表示する（参加者の画面にも反映）</label>' : '');
+  }
+
+  function viewHospitals() {
+    var add = '<form class="panel addform" data-form="addHospital">' +
+      '<div class="grow"><label class="label" for="hn">病院名</label><input type="text" id="hn" name="name" required style="width:100%"></div>' +
+      '<div><label class="label" for="hc">受入可能人数</label><input type="number" id="hc" name="cap" min="0" value="2" required class="num"></div>' +
+      '<label class="cb"><input type="checkbox" name="preg"> 妊婦可</label>' +
+      '<label class="cb"><input type="checkbox" name="ped"> 小児可</label>' +
+      '<button class="btn" type="submit">追加</button></form>';
+    var list = S.hospitals.length ? S.hospitals.map(function (h) {
+      return '<div class="item"><div class="fields">' +
+        '<input class="nm" type="text" aria-label="病院名" value="' + esc(h.name) + '" data-chg="hName" data-id="' + esc(h.id) + '">' +
+        '<label class="cb">受入可能人数 <input class="num" type="number" min="0" value="' + h.cap + '" data-chg="hCap" data-id="' + esc(h.id) + '"></label>' +
+        '<label class="cb"><input type="checkbox" data-chg="hPreg" data-id="' + esc(h.id) + '"' + (h.preg ? ' checked' : '') + '> 妊婦可</label>' +
+        '<label class="cb"><input type="checkbox" data-chg="hPed" data-id="' + esc(h.id) + '"' + (h.ped ? ' checked' : '') + '> 小児可</label>' +
+        '</div><div>' + armBtn('dh' + h.id, '削除', 'もう一度押すと削除', 'delHosp', 'data-id="' + esc(h.id) + '"') + '</div></div>';
+    }).join('') : '<div class="empty">病院が未登録です。</div>';
+    return '<div class="stack">' + add + '<div class="panel"><h2>登録済みの病院</h2>' + list + '</div></div>';
+  }
+
+  function viewMethods() {
+    var add = '<form class="panel addform" data-form="addMethod">' +
+      '<div class="grow"><label class="label" for="mn">搬送手段</label><input type="text" id="mn" name="name" required placeholder="例：救急車" style="width:100%"></div>' +
+      '<div><label class="label" for="mm">搬送時間（分）</label><input type="number" id="mm" name="min" min="0" value="10" required class="num"></div>' +
+      '<button class="btn" type="submit">追加</button></form>';
+    var list = S.methods.length ? S.methods.map(function (m) {
+      return '<div class="item"><div class="fields">' +
+        '<input class="nm" type="text" aria-label="搬送手段" value="' + esc(m.name) + '" data-chg="mName" data-id="' + esc(m.id) + '">' +
+        '<label class="cb">搬送時間 <input class="num" type="number" min="0" value="' + m.min + '" data-chg="mMin" data-id="' + esc(m.id) + '"> 分</label>' +
+        '</div><div>' + armBtn('dm' + m.id, '削除', 'もう一度押すと削除', 'delMethod', 'data-id="' + esc(m.id) + '"') + '</div></div>';
+    }).join('') : '<div class="empty">搬送手段が未登録です。</div>';
+    return '<div class="stack">' + add + '<div class="panel"><h2>登録済みの搬送手段</h2>' + list + '</div></div>';
+  }
+
+  function caseRows() {
+    var f = norm(ui.filter);
+    var cases = S.cases.slice().sort(byNo).filter(function (c) { return !f || String(c.no).indexOf(f) !== -1; });
+    var total = S.cases.length;
+    var head = '<h2>登録済みの症例（' + (f ? cases.length + ' / ' : '') + total + '件）</h2>';
+    if (!cases.length) return head + '<div class="empty">' + (total ? '該当する症例がありません。' : '症例が未登録です。') + '</div>';
+    return head + cases.map(function (c) {
+      var tl = S.logByCase[c.no] || [];
+      return '<div class="item"><div class="fields">' +
+        '<strong style="min-width:5.5em">症例 ' + esc(c.no) + '</strong>' +
+        '<input class="nm" type="text" aria-label="メモ" value="' + esc(c.memo || '') + '" data-chg="cMemo" data-no="' + esc(c.no) + '">' +
+        '<label class="cb"><input type="checkbox" data-chg="cPreg" data-no="' + esc(c.no) + '"' + (c.preg ? ' checked' : '') + '> 妊婦</label>' +
+        '<label class="cb"><input type="checkbox" data-chg="cChild" data-no="' + esc(c.no) + '"' + (c.child ? ' checked' : '') + '> 小児</label>' +
+        tl.map(function (t) { return '<span class="chip child">' + esc(teamName(t.team)) + ' 搬送済 → ' + esc(t.hname || '不明') + '</span>'; }).join('') +
+        '</div><div>' + armBtn('dc' + c.no, '削除', 'もう一度押すと削除', 'delCase', 'data-no="' + esc(c.no) + '"') + '</div></div>';
+    }).join('');
+  }
+  function renderCaseList() {
+    var el = document.getElementById('caseList');
+    if (el) el.innerHTML = caseRows();
+  }
+
+  function viewCases() {
+    var add = '<form class="panel addform" data-form="addCase">' +
+      '<div><label class="label" for="cn">症例番号</label><input type="text" id="cn" name="no" required class="cno" inputmode="numeric" autocomplete="off"></div>' +
+      '<div class="grow"><label class="label" for="cm">メモ（任意）</label><input type="text" id="cm" name="memo" style="width:100%"></div>' +
+      '<label class="cb"><input type="checkbox" name="preg"> 妊婦</label>' +
+      '<label class="cb"><input type="checkbox" name="child"> 小児</label>' +
+      '<button class="btn" type="submit">追加</button></form>';
+    var bulk = '<form class="panel" data-form="bulkCases"><h2>まとめて登録</h2>' +
+      '<p class="sub" style="margin-top:0">1行に1症例。「番号,区分,メモ」の形で書きます。区分は「妊婦」「小児」「妊婦小児」のいずれか、該当しなければ空欄。表計算ソフトからの貼り付けも使えます。登録済みの番号は上書きしません。</p>' +
+      '<textarea id="bulk" name="bulk" placeholder="1,妊婦,外傷&#10;2,小児&#10;3,,胸痛"></textarea>' +
+      '<div class="row" style="margin-top:10px"><button class="btn" type="submit">まとめて登録</button><span class="status' + (/不正|できません/.test(ui.bulkMsg) ? ' bad' : '') + '" aria-live="polite">' + esc(ui.bulkMsg) + '</span></div></form>';
+    var filter = '<div class="panel"><label class="label" for="caseFilter">症例番号で絞り込み</label><input type="text" id="caseFilter" inputmode="numeric" autocomplete="off" value="' + esc(ui.filter) + '" style="width:200px"></div>';
+    return '<div class="stack">' + add + bulk + filter + '<div class="panel" id="caseList">' + caseRows() + '</div></div>';
+  }
+
+  function viewTeams() {
+    var add = '<form class="panel addform" data-form="addTeam">' +
+      '<div class="grow"><label class="label" for="tn">チーム名</label><input type="text" id="tn" name="name" required placeholder="例：チームC" style="width:100%"></div>' +
+      '<button class="btn" type="submit">追加</button></form>';
+    var list = S.teams.length ? S.teams.map(function (t) {
+      var cnt = S.log.filter(function (l) { return l.team === t.id; }).length;
+      return '<div class="item"><div class="fields">' +
+        '<input class="nm" type="text" aria-label="チーム名" value="' + esc(t.name) + '" data-chg="tName" data-id="' + esc(t.id) + '">' +
+        '<span class="muted">搬送 ' + cnt + '件</span>' +
+        '</div><div>' + armBtn('dt' + t.id, '削除', 'もう一度押すと削除（このチームの記録も消えます）', 'delTeam', 'data-id="' + esc(t.id) + '"') + '</div></div>';
+    }).join('') : '<div class="empty">チームが未登録です。</div>';
+    return '<div class="stack">' + add + '<div class="panel"><h2>登録済みのチーム</h2>' + list + '</div></div>';
+  }
+
+  function viewLog() {
+    var rows = S.log.slice().sort(function (x, y) { return (y.t || 0) - (x.t || 0); }).map(function (l) {
+      var h = hosp(l.hid);
+      return '<div class="lrow"><div class="lmain"><strong>症例 ' + esc(l.caseNo) + '</strong> → ' + esc(l.hname || (h ? h.name : '不明')) + ' <span class="chip child">' + esc(teamName(l.team)) + '</span></div>' +
+        '<div class="lsub">' + timeText(l.t) + '　' + esc(l.mname || '') + '　' + l.min + '分　' + cdHtml(l) + '</div>' +
+        '<div class="lact">' + armBtn('dl' + l.id, '取消', 'もう一度押すと取消', 'delLog', 'data-id="' + esc(l.id) + '"') + '</div></div>';
+    }).join('');
+    var summary = S.hospitals.map(function (h) {
+      return '<tr><td>' + esc(h.name) + '</td>' + S.teams.map(function (t) { return '<td>' + used(h, t.id) + ' / ' + h.cap + '</td>'; }).join('') + '</tr>';
+    }).join('');
+    return '<div class="stack">' +
+      '<div class="panel"><h2>搬送記録</h2>' + (rows ? '<div>' + rows + '</div>' : '<div class="empty">まだ搬送は確定していません。</div>') + '</div>' +
+      treatLogHtml() + '<div class="panel"><h2>病院ごとの受け入れ状況（受入済 / 定員）</h2><div class="scroll"><table class="log"><thead><tr><th>病院</th>' + S.teams.map(function (t) { return '<th>' + esc(t.name) + '</th>'; }).join('') + '</tr></thead><tbody>' + (summary || '<tr><td colspan="3">病院が未登録です</td></tr>') + '</tbody></table></div></div>' +
+      supplySummaryHtml() + pinPanelHtml() + '<div class="panel"><h2>リセット</h2><p class="sub" style="margin-top:0">操作はすべての端末に反映されます。チームの登録は残ります。</p><div class="row">' +
+      S.teams.map(function (t) { return armBtn('clearlog' + t.id, esc(t.name) + 'の搬送・処置記録を消去', 'もう一度押すと消去', 'clearLog', 'data-team="' + esc(t.id) + '"'); }).join('') +
+      armBtn('clearlogall', '全チームの搬送・処置記録を消去', 'もう一度押すと消去', 'clearLog', 'data-team="all"') +
+      armBtn('resetall', '病院・症例・搬送手段・記録をすべて削除', 'もう一度押すと全削除', 'resetAll') + '</div></div></div>';
+  }
+
+  function judgeSig() { return (S.teamsReady ? '1' : '0') + '|' + S.teams.map(function (t) { return t.id + ':' + t.name; }).join(',') + '|' + (teamOk(ui.team) ? ui.team : ''); }
+  function renderBody() {
+    pending = false;
+    ui.jsig = judgeSig();
+    var b = document.getElementById('body');
+    b.innerHTML = ui.tab === 'judge' ? viewJudge() : ui.tab === 'treat' ? viewTreat() : ui.tab === 'setup' ? viewSetup() : ui.tab === 'cases' ? viewCases() : ui.tab === 'hospitals' ? viewHospitals() : ui.tab === 'methods' ? viewMethods() : ui.tab === 'teams' ? viewTeams() : viewLog();
+    if (ui.tab === 'judge') renderJudgeDyn();
+    if (ui.tab === 'treat') renderTreatDyn();
+  }
+  function cyrb53(str, seed) {
+    var h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+    for (var i = 0, ch; i < str.length; i++) {
+      ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+  }
+  function hashPin(code, salt) { return cyrb53(salt + ':' + code, 7) + cyrb53(code + ':' + salt, 13); }
+  function saveCfg(patch) {
+    var cur = { showReason: S.showReason, pinHash: S.pinHash || '', pinSalt: S.pinSalt || '' };
+    return db.doc('config/app').set(Object.assign(cur, patch));
+  }
+  var pinFails = 0, pinLock = 0;
+  function submitPin(raw) {
+    if (Date.now() < pinLock) { ui.pinErr = '入力を間違えたため、しばらく待ってからもう一度入力してください。'; renderMode(); return; }
+    var code = norm(raw);
+    if (S.pinHash && hashPin(code, S.pinSalt) === S.pinHash) {
+      pinFails = 0; ui.pinOk = true; ui.pinAsk = false; ui.pinErr = ''; ui.mode = 'staff';
+      try { localStorage.setItem('triage-mode', 'staff'); } catch (e) {}
+      renderAll();
+    } else {
+      pinFails++;
+      if (pinFails >= 5) { pinLock = Date.now() + 30000; pinFails = 0; ui.pinErr = '5回間違えました。30秒後にもう一度入力してください。'; }
+      else ui.pinErr = '認証コードが違います。';
+      renderMode();
+      var pi = document.getElementById('pinIn'); if (pi) { pi.value = ''; pi.focus(); }
+    }
+  }
+  function setPin(raw) {
+    var code = norm(raw);
+    if (!/^[0-9]{4,8}$/.test(code)) { ui.pinMsg = '認証コードは数字4〜8桁で入力してください。'; ui.pinMsgBad = true; renderBody(); return; }
+    var salt = Math.random().toString(36).slice(2, 10);
+    ui.pinOk = true;
+    saveCfg({ pinHash: hashPin(code, salt), pinSalt: salt }).then(function () {
+      ui.pinMsg = '認証コードを設定しました。次回から、スタッフモードに入るときに入力が必要です。'; ui.pinMsgBad = false; renderBody();
+    }).catch(function (e) { ui.pinOk = false; failed(e); });
+  }
+  function pinPanelHtml() {
+    return '<div class="panel"><h2>スタッフモードの認証コード</h2>' +
+      '<p class="sub" style="margin-top:0">' + (S.pinHash ? '設定済みです。参加者モードからスタッフモードに入るとき、コードの入力が必要になります。' : '未設定です。設定すると、参加者モードからスタッフモードに入るときにコードの入力が必要になります。') + '</p>' +
+      '<form class="addform" data-form="setPin">' +
+      '<div><label class="label" for="pinNew">' + (S.pinHash ? '新しい認証コード' : '認証コード') + '（数字4〜8桁）</label><input type="text" id="pinNew" name="pin" inputmode="numeric" autocomplete="off" maxlength="8" required class="cno" style="width:10rem"></div>' +
+      '<button class="btn" type="submit">' + (S.pinHash ? '変更する' : '設定する') + '</button>' +
+      (S.pinHash ? armBtn('clearpin', 'コードを削除', 'もう一度押すと削除', 'clearPin') : '') + '</form>' +
+      '<div class="status' + (ui.pinMsgBad ? ' bad' : '') + '" aria-live="polite">' + esc(ui.pinMsg || '') + '</div></div>';
+  }
+  function renderMode() {
+    var el = document.getElementById('modesw');
+    if (!el) return;
+    if (isAdmin && ui.pinAsk) {
+      el.innerHTML = '<form class="pinform" data-form="enterPin"><input type="password" id="pinIn" name="pin" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="認証コード" aria-label="認証コード">' +
+        '<button type="submit" class="btn sm">スタッフモードに入る</button><button type="button" class="btn ghost sm" data-act="pinCancel">戻る</button>' +
+        (ui.pinErr ? '<span class="pinerr" role="alert">' + esc(ui.pinErr) + '</span>' : '') + '</form>';
+    } else if (isAdmin) {
+      el.innerHTML = '<div class="modesw" role="group" aria-label="モード">' +
+        '<button type="button" data-act="setMode" data-id="participant" aria-pressed="' + (ui.mode === 'participant') + '">参加者モード</button>' +
+        '<button type="button" data-act="setMode" data-id="staff" aria-pressed="' + (ui.mode === 'staff') + '">スタッフモード</button></div>';
+    } else {
+      el.innerHTML = '<span class="modetag">参加者モード</span>';
+    }
+  }
+  function renderAll() { renderBanner(); renderMode(); renderNav(); renderBody(); }
+
+  /* ---------- actions ---------- */
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  async function confirmTransport() {
+    if (ui.busy || !canWrite()) return;
+    var c = S.caseMap[ui.caseNo], h = hosp(ui.hid), m = meth(ui.mid), team = ui.team, tid = team + ':' + (c ? c.no : '');
+    if (!c || !h || !m || !team) return;
+    ui.busy = true; setStatus('', false); renderJudgeDyn();
+    try {
+      var lock = null;
+      for (var i = 0; i < 4; i++) {
+        lock = await db.doc('locks/' + team + ':' + h.id).acquire({ holder: tabId, ttlMs: 1000 });
+        if (lock.acquired) break;
+        await sleep(600);
+      }
+      if (!lock || !lock.acquired) { setStatus('他の端末が同じ病院を処理中です。もう一度「搬送する」を押してください。', true); return; }
+      var fresh = await db.collection('transports').where('hid', '==', h.id).where('team', '==', team).get();
+      if (fresh.size >= h.cap) { setStatus('他の端末の搬送で ' + h.name + ' が（' + teamName(team) + 'で）満床になりました。搬送は確定していません。', true); return; }
+      var ex = await db.doc('transports/' + tid).get();
+      if (ex.exists) { setStatus('症例 ' + c.no + ' は他の端末ですでに（' + teamName(team) + 'で）搬送が確定しています。', true); return; }
+      await db.doc('transports/' + tid).set({ team: team, caseNo: c.no, hid: h.id, hname: h.name, mid: m.id, mname: m.name, min: m.min, t: Date.now() });
+      ui.done = { team: team, no: c.no, hname: h.name, mname: m.name, min: m.min };
+      ui.caseNo = ''; ui.hid = null;
+      var inp = document.getElementById('caseNo');
+      if (inp) { inp.value = ''; inp.focus(); }
+    } catch (e) {
+      setStatus('搬送を確定できませんでした。通信を確認して、もう一度お試しください。', true);
+    } finally {
+      ui.busy = false; renderJudgeDyn();
+    }
+  }
+
+  function act(name, d) {
+    var partOk = { tab: 1, pickTeam: 1, pickHosp: 1, pickMethod: 1, confirm: 1, pickProc: 1, confirmTreat: 1 };
+    if (name === 'pinCancel') { ui.pinAsk = false; ui.pinErr = ''; renderMode(); return; }
+    if (name === 'setMode') {
+      if (!isAdmin) return;
+      var want = d.id === 'participant' ? 'participant' : 'staff';
+      if (want === 'staff' && S.pinHash && !ui.pinOk) {
+        ui.pinAsk = true; ui.pinErr = ''; renderMode();
+        var pin0 = document.getElementById('pinIn'); if (pin0) pin0.focus();
+        return;
+      }
+      if (want === 'participant') ui.pinOk = false;
+      ui.pinAsk = false;
+      ui.mode = want;
+      try { localStorage.setItem('triage-mode', ui.mode); } catch (e) {}
+      ui.armed = null; ui.err = ''; setStatus('', false);
+      if (!tabAllowed(ui.tab)) ui.tab = 'judge';
+      renderAll();
+      return;
+    }
+    if (!partOk[name] && !isStaff()) return;
+    if (name === 'tab' && !tabAllowed(d.tab)) return;
+    var armKinds = { clearPin: 1, delSupply: 1, delProc: 1, delTreat: 1, delTeam: 1, delHosp: 1, delCase: 1, delMethod: 1, delLog: 1, clearLog: 1, resetAll: 1, clearSample: 1 };
+    if (armKinds[name]) {
+      if (ui.armed !== d.key) {
+        ui.armed = d.key; renderBanner();
+        if (ui.tab !== 'judge') renderBody();
+        return;
+      }
+      ui.armed = null;
+      if (!canWrite()) return;
+    } else if (ui.armed) {
+      ui.armed = null; renderBanner();
+    }
+
+    if (name === 'tab') {
+      ui.tab = d.tab; ui.err = ''; setStatus('', false); ui.bulkMsg = ''; ui.done = null; ui.tdone = null;
+      renderBanner(); renderNav(); renderBody(); return;
+    }
+    if (name === 'pickTeam') {
+      ui.team = d.id; ui.hid = null; ui.done = null; ui.tdone = null; setStatus('', false);
+      try { localStorage.setItem('triage-team', d.id); } catch (e) {}
+      renderBody(); return;
+    }
+    if (name === 'pickHosp') { ui.hid = d.id; ui.done = null; setStatus('', false); renderJudgeDyn(); return; }
+    if (name === 'pickMethod') { ui.mid = d.id; ui.done = null; setStatus('', false); renderJudgeDyn(); return; }
+    if (name === 'confirm') { confirmTransport(); return; }
+    if (name === 'pickProc') { ui.pid = d.id; ui.tdone = null; setStatus('', false); renderTreatDyn(); return; }
+    if (name === 'confirmTreat') { confirmTreat(); return; }
+
+    var p = null;
+    if (name === 'delHosp') {
+      var paths = ['hospitals/' + d.id].concat(S.log.filter(function (l) { return l.hid === d.id; }).map(function (l) { return 'transports/' + l.id; }));
+      if (ui.hid === d.id) ui.hid = null;
+      p = delAll(paths);
+    } else if (name === 'delCase') {
+      var cp = ['cases/' + d.no];
+      (S.logByCase[d.no] || []).forEach(function (l) { cp.push('transports/' + l.id); });
+      S.treats.filter(function (t) { return t.caseNo === d.no; }).forEach(function (t) { cp.push('treatments/' + t.id); });
+      p = delAll(cp);
+    } else if (name === 'delMethod') {
+      if (ui.mid === d.id) ui.mid = null;
+      p = delAll(['methods/' + d.id]);
+    } else if (name === 'delTeam') {
+      if (ui.team === d.id) ui.team = null;
+      p = delAll(['teams/' + d.id].concat(
+        S.log.filter(function (l) { return l.team === d.id; }).map(function (l) { return 'transports/' + l.id; }),
+        S.treats.filter(function (t) { return t.team === d.id; }).map(function (t) { return 'treatments/' + t.id; })));
+    } else if (name === 'clearPin') {
+      ui.pinMsg = '認証コードを削除しました。'; ui.pinMsgBad = false;
+      p = saveCfg({ pinHash: '', pinSalt: '' });
+    } else if (name === 'delSupply') {
+      p = delAll(['supplies/' + d.id]);
+    } else if (name === 'delProc') {
+      if (ui.pid === d.id) ui.pid = null;
+      p = delAll(['procedures/' + d.id]);
+    } else if (name === 'delTreat') {
+      p = delAll(['treatments/' + d.id]);
+    } else if (name === 'delLog') {
+      p = delAll(['transports/' + d.id]);
+    } else if (name === 'clearLog') {
+      p = delAll([].concat(
+        S.log.filter(function (l) { return d.team === 'all' || l.team === d.team; }).map(function (l) { return 'transports/' + l.id; }),
+        S.treats.filter(function (t) { return d.team === 'all' || t.team === d.team; }).map(function (t) { return 'treatments/' + t.id; })));
+    } else if (name === 'resetAll') {
+      ui.caseNo = ''; ui.hid = null; ui.mid = null; ui.tCase = ''; ui.pid = null;
+      p = delAll([].concat(
+        S.log.map(function (l) { return 'transports/' + l.id; }),
+        S.treats.map(function (t) { return 'treatments/' + t.id; }),
+        S.supplies.map(function (x) { return 'supplies/' + x.id; }),
+        S.procs.map(function (x) { return 'procedures/' + x.id; }),
+        S.cases.map(function (c) { return 'cases/' + c.no; }),
+        S.hospitals.map(function (h) { return 'hospitals/' + h.id; }),
+        S.methods.map(function (m) { return 'methods/' + m.id; })
+      ));
+    } else if (name === 'clearSample') {
+      var sh = {}, sc = {};
+      S.hospitals.forEach(function (h) { if (h.sample) sh[h.id] = 1; });
+      S.cases.forEach(function (c) { if (c.sample) sc[c.no] = 1; });
+      p = delAll([].concat(
+        S.log.filter(function (l) { return sh[l.hid] || sc[l.caseNo]; }).map(function (l) { return 'transports/' + l.id; }),
+        S.treats.filter(function (t) { return sc[t.caseNo]; }).map(function (t) { return 'treatments/' + t.id; }),
+        S.supplies.filter(function (x) { return x.sample; }).map(function (x) { return 'supplies/' + x.id; }),
+        S.procs.filter(function (x) { return x.sample; }).map(function (x) { return 'procedures/' + x.id; }),
+        S.cases.filter(function (c) { return c.sample; }).map(function (c) { return 'cases/' + c.no; }),
+        S.hospitals.filter(function (h) { return h.sample; }).map(function (h) { return 'hospitals/' + h.id; }),
+        S.methods.filter(function (m) { return m.sample; }).map(function (m) { return 'methods/' + m.id; })
+      ));
+    }
+    if (p) p.catch(failed);
+  }
+
+  var app = document.getElementById('app');
+  function onClick(e) {
+    var el = e.target.closest('[data-act]');
+    if (!el || el.disabled) return;
+    act(el.getAttribute('data-act'), {
+      tab: el.getAttribute('data-tab'), id: el.getAttribute('data-id'), no: el.getAttribute('data-no'), key: el.getAttribute('data-key'), team: el.getAttribute('data-team')
+    });
+  }
+  app.addEventListener('click', onClick);
+  document.getElementById('modesw').addEventListener('click', onClick);
+
+  app.addEventListener('input', function (e) {
+    var el = e.target;
+    if (el.id === 'caseNo') {
+      ui.caseNo = norm(el.value); ui.done = null; setStatus('', false); renderJudgeDyn();
+    } else if (el.id === 'tCaseNo') {
+      ui.tCase = norm(el.value); ui.tdone = null; setStatus('', false); renderTreatDyn();
+    } else if (el.id === 'caseFilter') {
+      ui.filter = el.value; renderCaseList();
+    }
+  });
+
+  app.addEventListener('change', function (e) {
+    var el = e.target.closest('[data-chg]');
+    if (!el) return;
+    var k = el.getAttribute('data-chg');
+    if (k === 'showReason') {
+      if (!isStaff() || !canWrite()) { renderJudgeDyn(); return; }
+      saveCfg({ showReason: el.checked }).catch(failed);
+      return;
+    }
+    if (!isStaff()) return;
+    if (!canWrite()) { pending = true; return; }
+    var id = el.getAttribute('data-id'), no = el.getAttribute('data-no');
+    var path = null, patch = null, n;
+    if (k === 'hName') { var nm = el.value.trim(); if (!nm) { renderBody(); return; } path = 'hospitals/' + id; patch = { name: nm }; }
+    else if (k === 'hCap') { n = parseInt(el.value, 10); path = 'hospitals/' + id; patch = { cap: isNaN(n) || n < 0 ? 0 : n }; }
+    else if (k === 'hPreg') { path = 'hospitals/' + id; patch = { preg: el.checked }; }
+    else if (k === 'hPed') { path = 'hospitals/' + id; patch = { ped: el.checked }; }
+    else if (k === 'mName') { var mn = el.value.trim(); if (!mn) { renderBody(); return; } path = 'methods/' + id; patch = { name: mn }; }
+    else if (k === 'mMin') { n = parseInt(el.value, 10); path = 'methods/' + id; patch = { min: isNaN(n) || n < 0 ? 0 : n }; }
+    else if (k === 'tName') { var tn = el.value.trim(); if (!tn) { renderBody(); return; } path = 'teams/' + id; patch = { name: tn }; }
+    else if (k === 'sName') { var sn2 = el.value.trim(); if (!sn2) { renderBody(); return; } path = 'supplies/' + id; patch = { name: sn2 }; }
+    else if (k === 'sStock') { n = parseInt(el.value, 10); path = 'supplies/' + id; patch = { stock: isNaN(n) || n < 0 ? 0 : n }; }
+    else if (k === 'pName') { var pn2 = el.value.trim(); if (!pn2) { renderBody(); return; } path = 'procedures/' + id; patch = { name: pn2 }; }
+    else if (k === 'pMin') { n = parseInt(el.value, 10); path = 'procedures/' + id; patch = { min: isNaN(n) || n < 0 ? 0 : n }; }
+    else if (k === 'pNeed') { n = parseInt(el.value, 10); path = 'procedures/' + id; patch = { needs: {} }; patch.needs[el.getAttribute('data-sid')] = isNaN(n) || n < 0 ? 0 : n; }
+    else if (k === 'cMemo') { path = 'cases/' + no; patch = { memo: el.value.trim() }; }
+    else if (k === 'cPreg') { path = 'cases/' + no; patch = { preg: el.checked }; }
+    else if (k === 'cChild') { path = 'cases/' + no; patch = { child: el.checked }; }
+    if (path) db.doc(path).update(patch).catch(failed);
+  });
+
+  function onSubmit(e) {
+    e.preventDefault();
+    var f = e.target, kind = f.getAttribute('data-form'), fd = new FormData(f);
+    if (kind === 'enterPin') { if (isAdmin) submitPin(fd.get('pin')); return; }
+    if (!isStaff() || !canWrite()) return;
+    if (kind === 'setPin') { setPin(fd.get('pin')); return; }
+    var n;
+    if (kind === 'addHospital') {
+      var name = String(fd.get('name') || '').trim();
+      n = parseInt(fd.get('cap'), 10);
+      if (!name) return;
+      db.collection('hospitals').add({ name: name, cap: isNaN(n) || n < 0 ? 0 : n, preg: !!fd.get('preg'), ped: !!fd.get('ped'), ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+    } else if (kind === 'addMethod') {
+      var mname = String(fd.get('name') || '').trim();
+      n = parseInt(fd.get('min'), 10);
+      if (!mname) return;
+      db.collection('methods').add({ name: mname, min: isNaN(n) || n < 0 ? 0 : n, ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+    } else if (kind === 'addTeam') {
+      var tname = String(fd.get('name') || '').trim();
+      if (!tname) return;
+      db.collection('teams').add({ name: tname, ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+    } else if (kind === 'addSupply') {
+      var sname = String(fd.get('name') || '').trim();
+      n = parseInt(fd.get('stock'), 10);
+      if (!sname) return;
+      db.collection('supplies').add({ name: sname, stock: isNaN(n) || n < 0 ? 0 : n, ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+    } else if (kind === 'addProc') {
+      var pname = String(fd.get('name') || '').trim();
+      n = parseInt(fd.get('min'), 10);
+      if (!pname) return;
+      var needsObj = {};
+      S.supplies.forEach(function (sp) {
+        var q = parseInt(fd.get('need_' + sp.id), 10);
+        if (!isNaN(q) && q > 0) needsObj[sp.id] = q;
+      });
+      db.collection('procedures').add({ name: pname, min: isNaN(n) || n < 0 ? 0 : n, needs: needsObj, ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+    } else if (kind === 'addCase') {
+      var no = norm(fd.get('no'));
+      if (!no) return;
+      if (!validId(no)) { ui.err = '症例番号は半角の英数字（記号は - _ . のみ）で入力してください。'; renderBanner(); return; }
+      if (S.caseMap[no]) { ui.err = '症例 ' + no + ' はすでに登録されています。'; renderBanner(); return; }
+      db.doc('cases/' + no).set({ memo: String(fd.get('memo') || '').trim(), preg: !!fd.get('preg'), child: !!fd.get('child'), ord: Date.now() })
+        .then(function () { f.reset(); var i = document.getElementById('cn'); if (i) i.focus(); }).catch(failed);
+    } else if (kind === 'bulkCases') {
+      var lines = String(fd.get('bulk') || '').split(/\r?\n/).filter(function (l) { return l.trim(); });
+      var items = [], bad = 0, skip = 0, seen = {};
+      lines.forEach(function (line) {
+        var parts = line.split(/[,\t，、]/);
+        var no2 = norm(parts[0]);
+        if (!validId(no2)) { bad++; return; }
+        if (S.caseMap[no2] || seen[no2]) { skip++; return; }
+        seen[no2] = 1;
+        var kindTxt = (parts[1] || '').trim();
+        items.push({ no: no2, memo: parts.slice(2).join(' ').trim(), preg: /妊/.test(kindTxt), child: /児/.test(kindTxt) });
+      });
+      if (!items.length) { ui.bulkMsg = bad || skip ? ('登録できる症例がありません（番号が不正 ' + bad + '件、登録済み ' + skip + '件）。') : '登録する行がありません。'; renderBody(); return; }
+      var chain = Promise.resolve(), base = Date.now();
+      for (var i = 0; i < items.length; i += 10) {
+        (function (chunk, off) {
+          chain = chain.then(function () {
+            return Promise.all(chunk.map(function (it, j) {
+              return db.doc('cases/' + it.no).set({ memo: it.memo, preg: it.preg, child: it.child, ord: base + off + j });
+            }));
+          });
+        })(items.slice(i, i + 10), i);
+      }
+      chain.then(function () {
+        ui.bulkMsg = items.length + '件を登録しました。' + (skip ? '登録済みの ' + skip + '件はスキップ。' : '') + (bad ? '番号が不正な ' + bad + '件は登録していません。' : '');
+        renderBody();
+      }).catch(function (err) { ui.bulkMsg = '登録できませんでした。一部だけ登録されている可能性があります。症例の一覧を確認してください。'; renderBody(); failed(err); });
+    }
+  }
+  app.addEventListener('submit', onSubmit);
+  document.getElementById('modesw').addEventListener('submit', onSubmit);
+
+  /* ---------- countdown ---------- */
+  setInterval(function () {
+    var now = Date.now(), crossed = false;
+    var els = document.querySelectorAll('.cd');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i], rem = (+el.getAttribute('data-end')) - now;
+      if (rem > 0) { el.textContent = '残り ' + fmt(rem); }
+      else if (el.getAttribute('data-done') !== '1') { el.setAttribute('data-done', '1'); el.textContent = el.getAttribute('data-dt') || '到着'; crossed = true; }
+    }
+    if (crossed) { if (ui.tab === 'judge') renderJudgeDyn(); else if (ui.tab === 'treat') renderTreatDyn(); }
+  }, 1000);
+
+  /* ---------- start ---------- */
+  renderAll();
+  (async function () {
+    try { db = window.makeDb ? window.makeDb() : null; } catch (e) { db = null; }
+    if (!db) { ui.dbState = 'none'; renderBanner(); return; }
+    ui.dbState = 'ok';
+    renderAll();
+    sub('config', 'cfg', function (id, v) { return { id: id, showReason: v.showReason !== false, pinHash: String(v.pinHash || ''), pinSalt: String(v.pinSalt || ''), ord: 0, name: id }; });
+    sub('hospitals', 'hospitals', function (id, v) { return { id: id, name: String(v.name || ''), cap: +v.cap || 0, preg: !!v.preg, ped: !!v.ped, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('teams', 'teams', function (id, v) { return { id: id, name: String(v.name || ''), ord: +v.ord || 0 }; });
+    sub('supplies', 'supplies', function (id, v) { return { id: id, name: String(v.name || ''), stock: +v.stock || 0, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('procedures', 'procs', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, needs: (v.needs && typeof v.needs === 'object') ? v.needs : {}, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('treatments', 'treats', function (id, v) { return { id: id, team: String(v.team || ''), caseNo: String(v.caseNo || ''), pid: String(v.pid || ''), pname: String(v.pname || ''), min: +v.min || 0, items: Array.isArray(v.items) ? v.items : [], t: +v.t || 0 }; });
+    sub('cases', 'cases', function (id, v) { return { no: id, memo: String(v.memo || ''), preg: !!v.preg, child: !!v.child, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('methods', 'methods', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('transports', 'log', function (id, v) { var ci = id.indexOf(':'); return { id: id, team: String(v.team || 'a'), caseNo: String(v.caseNo || (ci >= 0 ? id.slice(ci + 1) : id)), hid: String(v.hid || ''), hname: String(v.hname || ''), mid: String(v.mid || ''), mname: String(v.mname || ''), min: +v.min || 0, t: +v.t || 0 }; });
+    renderBanner();
+  })();
+})();
+</script>
+</body></html>

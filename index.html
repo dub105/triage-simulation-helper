@@ -325,7 +325,7 @@ window.makeDb = function () {
   }
   var CATS = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷']];
   var TAGS = [['black', '黒'], ['red', '赤'], ['yellow', '黄'], ['green', '緑']];
-  var HATTR = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷'], ['preg', '妊婦'], ['ped', '小児'], ['red', '赤タグ'], ['yellow', '黄タグ'], ['green', '緑タグ'], ['black', '黒タグ']];
+  var HATTR = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷'], ['preg', '妊婦'], ['ped', '小児'], ['red', '赤タグ'], ['yellow', '黄タグ'], ['green', '緑タグ']];
   var CATTR = ['trauma', 'brain', 'burn', 'preg', 'child'];
   var HKEYS = HATTR.map(function (a) { return a[0]; });
   function yes(x) { return /^(○|〇|◯|o|1|可|true|yes|y)$/i.test(String(x || '').trim()); }
@@ -469,7 +469,8 @@ window.makeDb = function () {
     if (c.preg && !h.preg) r.push('この病院は妊婦を受け入れできません');
     if (c.child && !h.ped) r.push('この病院は小児を受け入れできません');
     var et = tagInfo(c, ui.team).tag;
-    if (et && !h[et]) r.push('この病院は' + tagName(et) + 'タグを受け入れできません');
+    if (et === 'black') r.push('この症例は黒タグ（死亡）のため搬送できません');
+    else if (et && !h[et]) r.push('この病院は' + tagName(et) + 'タグを受け入れできません');
     if (remaining(h, ui.team) <= 0) r.push('受け入れ可能人数に達しています（満床）');
     return r;
   }
@@ -651,6 +652,7 @@ window.makeDb = function () {
     if (!c) return '<div class="result idle">登録されている症例番号を入力してください。</div>';
     if (!p) return '<div class="result idle">処置を選んでください。</div>';
     if (tagInfo(c, ui.team).state === 'notstarted') return '<div class="result warn"><div class="verdict">セクション未開始</div><div class="detail">' + esc(notStartedMsg(c)) + '</div></div>';
+    if (tagInfo(c, ui.team).tag === 'black') return '<div class="result ng"><div class="verdict">処置不可</div><div class="detail">この症例は黒タグ（死亡）のため処置できません。</div></div>';
     var sh = shortages(p, ui.team);
     if (sh.length) {
       return '<div class="result ng"><div class="verdict">物資が足りません</div><ul>' + sh.map(function (x) {
@@ -694,6 +696,7 @@ window.makeDb = function () {
     if (!c || !pr || !team) return;
     if (S.ended) { setStatus('全セクションが終了しました。処置はできません。', true); renderTreatDyn(); return; }
     if (tagInfo(c, team).state === 'notstarted') { setStatus(notStartedMsg(c), true); renderTreatDyn(); return; }
+    if (tagInfo(c, team).tag === 'black') { setStatus('この症例は黒タグ（死亡）のため処置できません。', true); renderTreatDyn(); return; }
     ui.tbusy = true; setStatus('', false); renderTreatDyn();
     try {
       var lock = null;
@@ -851,7 +854,7 @@ window.makeDb = function () {
       HATTR.map(function (a) { return '<label class="cb"><input type="checkbox" name="' + a[0] + '"> ' + a[1] + '可</label>'; }).join('') +
       '<button class="btn" type="submit">追加</button></form>';
     var hbulk = '<form class="panel" data-form="bulkHospitals"><h2>まとめて登録</h2>' +
-      '<p class="sub" style="margin-top:0">1行に1病院。「病院名,定員,外傷,脳疾患,熱傷,妊婦,小児,赤,黄,緑,黒」の順に、受け入れ可なら○、不可なら×を書きます（黒は省略すると×）。表計算ソフトからの貼り付けも使えます。同じ名前の病院は登録しません。</p>' +
+      '<p class="sub" style="margin-top:0">1行に1病院。「病院名,定員,外傷,脳疾患,熱傷,妊婦,小児,赤,黄,緑」の順に、受け入れ可なら○、不可なら×を書きます。表計算ソフトからの貼り付けも使えます。同じ名前の病院は登録しません。</p>' +
       '<textarea id="hbulk" name="bulk" placeholder="病院A,20,○,○,○,○,○,○,○,○&#10;病院B,7,○,×,×,×,×,○,○,○"></textarea>' +
       '<div class="row" style="margin-top:10px"><button class="btn" type="submit">まとめて登録</button><span class="status' + (/不正|できません/.test(ui.hBulkMsg || '') ? ' bad' : '') + '" aria-live="polite">' + esc(ui.hBulkMsg || '') + '</span></div></form>';
     var list = S.hospitals.length ? S.hospitals.map(function (h) {
@@ -1117,6 +1120,7 @@ window.makeDb = function () {
       var fresh = await db.collection('transports').where('hid', '==', h.id).where('team', '==', team).get();
       if (fresh.size >= h.cap) { setStatus('他の端末の搬送で ' + h.name + ' が（' + teamName(team) + 'で）満床になりました。搬送は確定していません。', true); return; }
       var etg = tagInfo(c, team).tag;
+      if (etg === 'black') { setStatus('黒タグ（死亡）に変わったため、搬送できません。搬送は確定していません。', true); return; }
       if (etg && !h[etg]) { setStatus('タグが ' + tagName(etg) + ' に変わったため、この病院へは搬送できません。搬送は確定していません。', true); return; }
       var ex = await db.doc('transports/' + tid).get();
       if (ex.exists) { setStatus('症例 ' + c.no + ' は他の端末ですでに（' + teamName(team) + 'で）搬送が確定しています。', true); return; }
@@ -1467,7 +1471,7 @@ window.makeDb = function () {
     ui.dbState = 'ok';
     renderAll();
     sub('config', 'cfg', function (id, v) { return { id: id, showReason: v.showReason !== false, pinHash: String(v.pinHash || ''), pinSalt: String(v.pinSalt || ''), ended: !!v.ended, endedAt: +v.endedAt || 0, ord: 0, name: id }; });
-    sub('hospitals', 'hospitals', function (id, v) { return { id: id, name: String(v.name || ''), cap: +v.cap || 0, preg: !!v.preg, ped: !!v.ped, trauma: v.trauma !== false, brain: v.brain !== false, burn: v.burn !== false, red: v.red !== false, yellow: v.yellow !== false, green: v.green !== false, black: !!v.black, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('hospitals', 'hospitals', function (id, v) { return { id: id, name: String(v.name || ''), cap: +v.cap || 0, preg: !!v.preg, ped: !!v.ped, trauma: v.trauma !== false, brain: v.brain !== false, burn: v.burn !== false, red: v.red !== false, yellow: v.yellow !== false, green: v.green !== false, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('teams', 'teams', function (id, v) { return { id: id, name: String(v.name || ''), ord: +v.ord || 0 }; });
     sub('supplies', 'supplies', function (id, v) { return { id: id, name: String(v.name || ''), stock: +v.stock || 0, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('procedures', 'procs', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, needs: (v.needs && typeof v.needs === 'object') ? v.needs : {}, ord: +v.ord || 0, sample: !!v.sample }; });

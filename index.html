@@ -107,6 +107,13 @@ select.tagsel { padding: 7px 8px; }
 .secrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .secel { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 8em; }
 #snd[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip.tag-black { color: #f1f1f1; background: #1b1b1b; border: 1px solid #8a8a8a; }
+.bigstat { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 12px; }
+.bigstat b { font-family: var(--font-display); font-weight: 900; font-size: 2.6rem; line-height: 1; }
+.rtable { width: 100%; border-collapse: collapse; font-size: .9rem; margin-bottom: 14px; }
+.rtable th, .rtable td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.rtable th { color: var(--muted); font-size: .78rem; font-weight: 700; }
+.rsub { font-size: .78rem; letter-spacing: .08em; color: var(--muted); font-weight: 700; margin: 12px 0 4px; }
 .chip.none { color: var(--muted); background: var(--bg); }
 .caseinfo { margin-top: 10px; min-height: 28px; }
 .twocol { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
@@ -289,12 +296,12 @@ window.makeDb = function () {
   var db = null;
   var ro = false;
   var isAdmin = true; /* 誰でもスタッフモードへ切替可能。入るには認証コードが必要（設定後） */
-  var S = { sections: [], secMap: {}, hospitals: [], cases: [], methods: [], log: [], cfg: [], cfgReady: false, pinHash: '', pinSalt: '', showReason: true, supplies: [], procs: [], treats: [], supUsed: {}, teams: [], teamsReady: false, caseMap: {}, logMap: {}, usedBy: {} };
+  var S = { ended: false, endedAt: 0, sections: [], secMap: {}, hospitals: [], cases: [], methods: [], log: [], cfg: [], cfgReady: false, pinHash: '', pinSalt: '', showReason: true, supplies: [], procs: [], treats: [], supUsed: {}, teams: [], teamsReady: false, caseMap: {}, logMap: {}, usedBy: {} };
   function teamOk(id) { for (var i = 0; i < S.teams.length; i++) if (S.teams[i].id === id) return true; return false; }
   function teamName(id) { for (var i = 0; i < S.teams.length; i++) if (S.teams[i].id === id) return S.teams[i].name; return '削除されたチーム'; }
   function loadMode() { try { return localStorage.getItem('triage-mode') === 'participant' ? 'participant' : 'staff'; } catch (e) { return 'staff'; } }
   function isStaff() { return isAdmin && ui.mode === 'staff' && S.cfgReady && (!S.pinHash || ui.pinOk); }
-  function tabAllowed(t) { return isStaff() || t === 'judge' || t === 'treat'; }
+  function tabAllowed(t) { return isStaff() || t === 'judge' || t === 'treat' || (t === 'result' && S.ended); }
   function loadTeam() { try { return localStorage.getItem('triage-team') || null; } catch (e) { return null; } }
   var ui = {
     team: loadTeam(), tCase: '', pid: null, tdone: null, tbusy: false,
@@ -317,8 +324,8 @@ window.makeDb = function () {
       .replace(/[　\s]+/g, '').trim();
   }
   var CATS = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷']];
-  var TAGS = [['red', '赤'], ['yellow', '黄'], ['green', '緑']];
-  var HATTR = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷'], ['preg', '妊婦'], ['ped', '小児'], ['red', '赤タグ'], ['yellow', '黄タグ'], ['green', '緑タグ']];
+  var TAGS = [['black', '黒'], ['red', '赤'], ['yellow', '黄'], ['green', '緑']];
+  var HATTR = [['trauma', '外傷'], ['brain', '脳疾患'], ['burn', '熱傷'], ['preg', '妊婦'], ['ped', '小児'], ['red', '赤タグ'], ['yellow', '黄タグ'], ['green', '緑タグ'], ['black', '黒タグ']];
   var CATTR = ['trauma', 'brain', 'burn', 'preg', 'child'];
   var HKEYS = HATTR.map(function (a) { return a[0]; });
   function yes(x) { return /^(○|〇|◯|o|1|可|true|yes|y)$/i.test(String(x || '').trim()); }
@@ -349,8 +356,8 @@ window.makeDb = function () {
     return t || '物資なし';
   }
   /* ---------- sections / tag escalation ---------- */
-  var RANK = { '': 0, green: 1, yellow: 2, red: 3 };
-  function validTag(x) { return /^(red|yellow|green)$/.test(x) ? x : ''; }
+  var RANK = { '': 0, green: 1, yellow: 2, red: 3, black: 4 };
+  function validTag(x) { return /^(black|red|yellow|green)$/.test(x) ? x : ''; }
   function mval(x) { var n = parseInt(norm(x), 10); return isNaN(n) || n < 0 ? null : n; }
   function secOf(c) { return c && c.sec && S.secMap[c.sec] ? S.secMap[c.sec] : null; }
   function secElapsed(sec) { if (!sec || !sec.startedAt) return null; return Math.max(0, (sec.pausedAt || Date.now()) - sec.startedAt); }
@@ -443,9 +450,9 @@ window.makeDb = function () {
     try { return new Date(t).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (e) { return ''; }
   }
   function index() {
-    S.showReason = true;
+    S.showReason = true; S.ended = false; S.endedAt = 0;
     S.pinHash = ''; S.pinSalt = '';
-    S.cfg.forEach(function (c) { if (c.id === 'app') { S.showReason = c.showReason !== false; S.pinHash = c.pinHash || ''; S.pinSalt = c.pinSalt || ''; } });
+    S.cfg.forEach(function (c) { if (c.id === 'app') { S.showReason = c.showReason !== false; S.pinHash = c.pinHash || ''; S.pinSalt = c.pinSalt || ''; S.ended = !!c.ended; S.endedAt = +c.endedAt || 0; } });
     S.secMap = {}; S.sections.forEach(function (x) { S.secMap[x.id] = x; });
     S.caseMap = {}; S.logMap = {}; S.usedBy = {}; S.logByCase = {}; S.supUsed = {};
     S.treats.forEach(function (t) { (t.items || []).forEach(function (it) { var k = t.team + '|' + it.sid; S.supUsed[k] = (S.supUsed[k] || 0) + (+it.qty || 0); }); });
@@ -509,6 +516,8 @@ window.makeDb = function () {
       if (key === 'cfg') {
         S.cfgReady = true;
         if (S.pinHash && !ui.pinOk && ui.mode === 'staff') ui.mode = 'participant';
+        if (S.ended && !ui.endSeen) { ui.endSeen = true; ui.tab = 'result'; }
+        if (!S.ended) { ui.endSeen = false; if (ui.tab === 'result') ui.tab = 'judge'; }
         if (!tabAllowed(ui.tab)) ui.tab = 'judge';
         renderMode(); renderNav();
       }
@@ -572,6 +581,7 @@ window.makeDb = function () {
     if (ui.dbState === 'none') h += '<div class="notice bad">Firebase が未設定です。firebase-config.js に設定値を入れてください（README の手順）。</div>';
     if (ui.dbState === 'error') h += '<div class="notice bad">同期が途切れました。ページを開き直してください。</div>';
     if (ro) h += '<div class="notice">このリンクでは閲覧のみです。判定や登録をするには、共有設定で編集できる権限（Contributor以上）が必要です。</div>';
+    if (S.ended) h += '<div class="notice">全セクションが終了しました。搬送・処置はできません。「リザルト」タブで結果を確認できます。</div>';
     if (ui.err) h += '<div class="notice bad" role="alert">' + esc(ui.err) + '</div>';
     var sample = S.hospitals.some(function (x) { return x.sample; }) || S.cases.some(function (x) { return x.sample; }) || S.methods.some(function (x) { return x.sample; }) || S.supplies.some(function (x) { return x.sample; }) || S.procs.some(function (x) { return x.sample; });
     if (sample && isStaff()) h += '<div class="notice">サンプルデータが入っています。本番前に削除してください。 ' + armBtn('clearsample', 'サンプルを削除', 'もう一度押すと削除', 'clearSample') + '</div>';
@@ -579,7 +589,7 @@ window.makeDb = function () {
   }
 
   function renderNav() {
-    var tabs = [['judge', '判定'], ['treat', '処置'], ['sections', 'セクション'], ['cases', '症例'], ['hospitals', '病院'], ['methods', '搬送手段'], ['setup', '処置設定'], ['teams', 'チーム'], ['log', '記録']];
+    var tabs = [['judge', '判定'], ['treat', '処置'], ['sections', 'セクション'], ['cases', '症例'], ['hospitals', '病院'], ['methods', '搬送手段'], ['setup', '処置設定'], ['teams', 'チーム'], ['log', '記録'], ['result', 'リザルト']];
     tabs = tabs.filter(function (t) { return tabAllowed(t[0]); });
     document.getElementById('nav').innerHTML = tabs.map(function (t) {
       return '<button type="button" role="tab" data-act="tab" data-tab="' + t[0] + '" aria-selected="' + (ui.tab === t[0]) + '">' + t[1] + '</button>';
@@ -682,6 +692,7 @@ window.makeDb = function () {
     if (ui.tbusy || !canWrite()) return;
     var c = S.caseMap[ui.tCase], pr = proc(ui.pid), team = ui.team;
     if (!c || !pr || !team) return;
+    if (S.ended) { setStatus('全セクションが終了しました。処置はできません。', true); renderTreatDyn(); return; }
     if (tagInfo(c, team).state === 'notstarted') { setStatus(notStartedMsg(c), true); renderTreatDyn(); return; }
     ui.tbusy = true; setStatus('', false); renderTreatDyn();
     try {
@@ -840,7 +851,7 @@ window.makeDb = function () {
       HATTR.map(function (a) { return '<label class="cb"><input type="checkbox" name="' + a[0] + '"> ' + a[1] + '可</label>'; }).join('') +
       '<button class="btn" type="submit">追加</button></form>';
     var hbulk = '<form class="panel" data-form="bulkHospitals"><h2>まとめて登録</h2>' +
-      '<p class="sub" style="margin-top:0">1行に1病院。「病院名,定員,外傷,脳疾患,熱傷,妊婦,小児,赤,黄,緑」の順に、受け入れ可なら○、不可なら×を書きます。表計算ソフトからの貼り付けも使えます。同じ名前の病院は登録しません。</p>' +
+      '<p class="sub" style="margin-top:0">1行に1病院。「病院名,定員,外傷,脳疾患,熱傷,妊婦,小児,赤,黄,緑,黒」の順に、受け入れ可なら○、不可なら×を書きます（黒は省略すると×）。表計算ソフトからの貼り付けも使えます。同じ名前の病院は登録しません。</p>' +
       '<textarea id="hbulk" name="bulk" placeholder="病院A,20,○,○,○,○,○,○,○,○&#10;病院B,7,○,×,×,×,×,○,○,○"></textarea>' +
       '<div class="row" style="margin-top:10px"><button class="btn" type="submit">まとめて登録</button><span class="status' + (/不正|できません/.test(ui.hBulkMsg || '') ? ' bad' : '') + '" aria-live="polite">' + esc(ui.hBulkMsg || '') + '</span></div></form>';
     var list = S.hospitals.length ? S.hospitals.map(function (h) {
@@ -875,6 +886,39 @@ window.makeDb = function () {
       '<input class="num" type="number" min="0" aria-label="1回目の悪化（分）" placeholder="分" value="' + (c.m1 != null ? c.m1 : '') + '" ' + a1 + '> 分後に ' + tagSelect(a2, c.t1, '—') +
       '<span>／</span><input class="num" type="number" min="0" aria-label="2回目の悪化（分）" placeholder="分" value="' + (c.m2 != null ? c.m2 : '') + '" ' + a3 + '> 分後に ' + tagSelect(a4, c.t2, '—') + '</div>';
   }
+  function playedCases() { return S.cases.filter(function (c) { var sx = secOf(c); return !c.sec || !sx || !!sx.startedAt; }); }
+  var TAGORDER = [['black', '黒'], ['red', '赤'], ['yellow', '黄'], ['green', '緑'], ['', 'タグなし']];
+  function tagChip(g) { return g ? '<span class="chip tag-' + g + '">' + esc(tagName(g)) + 'タグ</span>' : '<span class="chip none">タグなし</span>'; }
+  function teamResultHtml(t, played) {
+    var mine = S.log.filter(function (l) { return l.team === t.id; });
+    var doneNo = {}; mine.forEach(function (l) { doneNo[l.caseNo] = 1; });
+    var left = played.filter(function (c) { return !doneNo[c.no]; }).sort(byNo);
+    var rows = TAGORDER.map(function (g) {
+      var a = mine.filter(function (l) { return (l.tag || '') === g[0]; }).length;
+      var b = left.filter(function (c) { return tagInfo(c, t.id).tag === g[0]; }).length;
+      return (a || b) ? '<tr><td>' + tagChip(g[0]) + '</td><td>' + a + '</td><td>' + b + '</td></tr>' : '';
+    }).join('');
+    var tr = S.treats.filter(function (x) { return x.team === t.id; });
+    var trCases = {}; tr.forEach(function (x) { trCases[x.caseNo] = 1; });
+    var sup = S.supplies.map(function (sp) { return '<tr><td>' + esc(sp.name) + '</td><td>' + (S.supUsed[t.id + '|' + sp.id] || 0) + ' / ' + sp.stock + '</td></tr>'; }).join('');
+    var hos = S.hospitals.map(function (h) { return '<tr><td>' + esc(h.name) + '</td><td>' + used(h, t.id) + ' / ' + h.cap + '</td></tr>'; }).join('');
+    return '<div class="panel"><h2>' + esc(t.name) + '</h2>' +
+      '<div class="bigstat"><b>' + mine.length + '</b><span>/ ' + played.length + ' 症例を搬送</span></div>' +
+      '<div class="rsub">タグ別（搬送時のタグ／未搬送は終了時のタグ）</div>' +
+      '<table class="rtable"><thead><tr><th>タグ</th><th>搬送</th><th>未搬送</th></tr></thead><tbody>' + (rows || '<tr><td colspan="3">記録がありません</td></tr>') + '</tbody></table>' +
+      '<div class="rsub">処置</div><p style="margin:4px 0 14px">' + tr.length + '件（' + Object.keys(trCases).length + '症例）</p>' +
+      (sup ? '<div class="rsub">物資の使用（使用 / 在庫）</div><table class="rtable"><tbody>' + sup + '</tbody></table>' : '') +
+      (hos ? '<div class="rsub">病院ごとの搬送数（搬送 / 定員）</div><table class="rtable"><tbody>' + hos + '</tbody></table>' : '') +
+      '<div class="rsub">未搬送の症例（' + left.length + '件）</div>' +
+      (left.length ? '<div>' + left.map(function (c) { var g = tagInfo(c, t.id).tag; return '<span class="chip ' + (g ? 'tag-' + g : 'none') + '">症例 ' + esc(c.no) + '</span>'; }).join('') + '</div>' : '<p style="margin:4px 0 0">なし</p>') +
+      '</div>';
+  }
+  function viewResult() {
+    if (!S.ended) return '<div class="result idle">まだ終了していません。</div>';
+    var played = playedCases();
+    return '<div class="stack"><div class="panel"><h2>リザルト</h2><p class="sub" style="margin:0">対象症例 ' + played.length + '件（開始したセクションの症例と、セクションなしの症例）　終了 ' + timeText(S.endedAt) + '</p></div>' +
+      '<div class="twocol">' + S.teams.map(function (t) { return teamResultHtml(t, played); }).join('') + '</div></div>';
+  }
   function viewSections() {
     var add = '<form class="panel addform" data-form="addSection">' +
       '<div class="grow"><label class="label" for="sn2">セクション名</label><input type="text" id="sn2" name="name" placeholder="例：セクション' + (S.sections.length + 1) + '" style="width:100%"></div>' +
@@ -891,7 +935,10 @@ window.makeDb = function () {
         '<div class="secrow"><span class="secel" data-sid="' + esc(x.id) + '">' + secText(x) + '</span>' + btns + '</div></div>' +
         '<div>' + armBtn('dsec' + x.id, '削除', 'もう一度押すと削除', 'delSection', 'data-id="' + esc(x.id) + '"') + '</div></div>';
     }).join('') : '<div class="empty">セクションが未登録です。登録すると、症例のタグ悪化をセクションの開始時刻から数えます。</div>';
-    return '<div class="stack">' + add + '<div class="panel"><h2>セクション</h2><p class="sub" style="margin-top:0">「開始」を押した時刻から、そのセクションの症例のタグ悪化を数えます。全チーム共通です。開始前のセクションの症例は、搬送・処置ができません。</p>' + list + '</div></div>';
+    var endp = S.ended
+      ? '<div class="panel"><h2>終了しました</h2><p class="sub" style="margin-top:0">全員の画面にリザルトを表示しています。</p><div class="row"><button type="button" class="btn" data-act="tab" data-tab="result">リザルトを見る</button><button type="button" class="btn ghost" data-act="reopen">終了を取り消す</button></div></div>'
+      : '<div class="panel"><h2>全セクション終了</h2><p class="sub" style="margin-top:0">押すと、動いているセクションのタイマーを止め、全員の画面にチームごとのリザルトを表示します。終了後は、搬送・処置ができなくなります（取り消せます）。</p>' + armBtn('endall', '全セクションを終了', 'もう一度押すと終了', 'endAll') + '</div>';
+    return '<div class="stack">' + endp + add + '<div class="panel"><h2>セクション</h2><p class="sub" style="margin-top:0">「開始」を押した時刻から、そのセクションの症例のタグ悪化を数えます。全チーム共通です。開始前のセクションの症例は、搬送・処置ができません。</p>' + list + '</div></div>';
   }
   function tagSelect(attrs, cur, emptyLabel) {
     return '<select class="tagsel" aria-label="トリアージタグ" ' + attrs + '><option value="">' + (emptyLabel || 'タグなし') + '</option>' + TAGS.map(function (a) { return '<option value="' + a[0] + '"' + (cur === a[0] ? ' selected' : '') + '>' + a[1] + 'タグ</option>'; }).join('') + '</select>';
@@ -978,7 +1025,7 @@ window.makeDb = function () {
     pending = false;
     ui.jsig = judgeSig();
     var b = document.getElementById('body');
-    b.innerHTML = ui.tab === 'judge' ? viewJudge() : ui.tab === 'treat' ? viewTreat() : ui.tab === 'setup' ? viewSetup() : ui.tab === 'sections' ? viewSections() : ui.tab === 'cases' ? viewCases() : ui.tab === 'hospitals' ? viewHospitals() : ui.tab === 'methods' ? viewMethods() : ui.tab === 'teams' ? viewTeams() : viewLog();
+    b.innerHTML = ui.tab === 'judge' ? viewJudge() : ui.tab === 'treat' ? viewTreat() : ui.tab === 'setup' ? viewSetup() : ui.tab === 'sections' ? viewSections() : ui.tab === 'result' ? viewResult() : ui.tab === 'cases' ? viewCases() : ui.tab === 'hospitals' ? viewHospitals() : ui.tab === 'methods' ? viewMethods() : ui.tab === 'teams' ? viewTeams() : viewLog();
     if (ui.tab === 'judge') renderJudgeDyn();
     if (ui.tab === 'treat') renderTreatDyn();
   }
@@ -995,7 +1042,7 @@ window.makeDb = function () {
   }
   function hashPin(code, salt) { return cyrb53(salt + ':' + code, 7) + cyrb53(code + ':' + salt, 13); }
   function saveCfg(patch) {
-    var cur = { showReason: S.showReason, pinHash: S.pinHash || '', pinSalt: S.pinSalt || '' };
+    var cur = { showReason: S.showReason, pinHash: S.pinHash || '', pinSalt: S.pinSalt || '', ended: !!S.ended, endedAt: S.endedAt || 0 };
     return db.doc('config/app').set(Object.assign(cur, patch));
   }
   var pinFails = 0, pinLock = 0;
@@ -1056,6 +1103,7 @@ window.makeDb = function () {
     if (ui.busy || !canWrite()) return;
     var c = S.caseMap[ui.caseNo], h = hosp(ui.hid), m = meth(ui.mid), team = ui.team, tid = team + ':' + (c ? c.no : '');
     if (!c || !h || !m || !team) return;
+    if (S.ended) { setStatus('全セクションが終了しました。搬送はできません。', true); renderJudgeDyn(); return; }
     if (tagInfo(c, team).state === 'notstarted') { setStatus(notStartedMsg(c), true); renderJudgeDyn(); return; }
     ui.busy = true; setStatus('', false); renderJudgeDyn();
     try {
@@ -1072,7 +1120,7 @@ window.makeDb = function () {
       if (etg && !h[etg]) { setStatus('タグが ' + tagName(etg) + ' に変わったため、この病院へは搬送できません。搬送は確定していません。', true); return; }
       var ex = await db.doc('transports/' + tid).get();
       if (ex.exists) { setStatus('症例 ' + c.no + ' は他の端末ですでに（' + teamName(team) + 'で）搬送が確定しています。', true); return; }
-      await db.doc('transports/' + tid).set({ team: team, caseNo: c.no, hid: h.id, hname: h.name, mid: m.id, mname: m.name, min: m.min, t: Date.now() });
+      await db.doc('transports/' + tid).set({ team: team, caseNo: c.no, hid: h.id, hname: h.name, mid: m.id, mname: m.name, min: m.min, tag: tagInfo(c, team).tag, t: Date.now() });
       ui.done = { team: team, no: c.no, hname: h.name, mname: m.name, min: m.min };
       ui.caseNo = ''; ui.hid = null;
       var inp = document.getElementById('caseNo');
@@ -1106,7 +1154,7 @@ window.makeDb = function () {
     }
     if (!partOk[name] && !isStaff()) return;
     if (name === 'tab' && !tabAllowed(d.tab)) return;
-    var armKinds = { secReset: 1, delSection: 1, clearPin: 1, delSupply: 1, delProc: 1, delTreat: 1, delTeam: 1, delHosp: 1, delCase: 1, delMethod: 1, delLog: 1, clearLog: 1, resetAll: 1, clearSample: 1 };
+    var armKinds = { endAll: 1, secReset: 1, delSection: 1, clearPin: 1, delSupply: 1, delProc: 1, delTreat: 1, delTeam: 1, delHosp: 1, delCase: 1, delMethod: 1, delLog: 1, clearLog: 1, resetAll: 1, clearSample: 1 };
     if (armKinds[name]) {
       if (ui.armed !== d.key) {
         ui.armed = d.key; renderBanner();
@@ -1134,6 +1182,7 @@ window.makeDb = function () {
     if (name === 'pickProc') { ui.pid = d.id; ui.tdone = null; setStatus('', false); renderTreatDyn(); return; }
     if (name === 'confirmTreat') { confirmTreat(); return; }
 
+    if (name === 'reopen') { if (!canWrite()) return; saveCfg({ ended: false, endedAt: 0 }).catch(failed); return; }
     var sx = S.secMap[d.id];
     if (name === 'secStart' || name === 'secPause' || name === 'secResume') {
       if (!sx || !canWrite()) return;
@@ -1145,7 +1194,11 @@ window.makeDb = function () {
       return;
     }
     var p = null;
-    if (name === 'secReset') {
+    if (name === 'endAll') {
+      var nw2 = Date.now();
+      p = Promise.all(S.sections.filter(function (x) { return x.startedAt && !x.pausedAt; }).map(function (x) { return db.doc('sections/' + x.id).update({ pausedAt: nw2 }); }))
+        .then(function () { return saveCfg({ ended: true, endedAt: nw2 }); });
+    } else if (name === 'secReset') {
       p = db.doc('sections/' + d.id).update({ startedAt: null, pausedAt: null });
     } else if (name === 'delSection') {
       p = delAll(['sections/' + d.id]);
@@ -1193,7 +1246,7 @@ window.makeDb = function () {
         S.hospitals.map(function (h) { return 'hospitals/' + h.id; }),
         S.methods.map(function (m) { return 'methods/' + m.id; }),
         S.sections.map(function (x) { return 'sections/' + x.id; })
-      ));
+      )).then(function () { return saveCfg({ ended: false, endedAt: 0 }); });
     } else if (name === 'clearSample') {
       var sh = {}, sc = {};
       S.hospitals.forEach(function (h) { if (h.sample) sh[h.id] = 1; });
@@ -1254,7 +1307,7 @@ window.makeDb = function () {
     else if (k === 'cM1' || k === 'cM2') { path = 'cases/' + no; patch = {}; patch[k === 'cM1' ? 'm1' : 'm2'] = mval(el.value); }
     else if (k === 'cT1' || k === 'cT2') { path = 'cases/' + no; patch = {}; patch[k === 'cT1' ? 't1' : 't2'] = validTag(el.value); }
     else if (k === 'secName') { var sn3 = el.value.trim(); if (!sn3) { renderBody(); return; } path = 'sections/' + id; patch = { name: sn3 }; }
-    else if (k === 'cTag') { path = 'cases/' + no; patch = { tag: /^(red|yellow|green)$/.test(el.value) ? el.value : '' }; }
+    else if (k === 'cTag') { path = 'cases/' + no; patch = { tag: validTag(el.value) }; }
     else if (k === 'hPreg') { path = 'hospitals/' + id; patch = { preg: el.checked }; }
     else if (k === 'hPed') { path = 'hospitals/' + id; patch = { ped: el.checked }; }
     else if (k === 'mName') { var mn = el.value.trim(); if (!mn) { renderBody(); return; } path = 'methods/' + id; patch = { name: mn }; }
@@ -1349,9 +1402,9 @@ window.makeDb = function () {
         seen[no2] = 1;
         var kindTxt = (parts[1] || '').trim();
         var secN = String(parts[3] || '').trim(), secO = S.sections.filter(function (x) { return x.name === secN; })[0];
-        var c1 = /(\d+)\D*(赤|黄|緑)/.exec(norm(parts[4] || '')), c2 = /(\d+)\D*(赤|黄|緑)/.exec(norm(parts[5] || ''));
-        function tg(m) { return m ? (m[2] === '赤' ? 'red' : m[2] === '黄' ? 'yellow' : 'green') : ''; }
-        items.push({ no: no2, memo: String(parts[2] || '').trim(), preg: /妊/.test(kindTxt), child: /児/.test(kindTxt), trauma: /外傷/.test(kindTxt), brain: /脳/.test(kindTxt), burn: /熱/.test(kindTxt), tag: /赤/.test(kindTxt) ? 'red' : /黄/.test(kindTxt) ? 'yellow' : /緑/.test(kindTxt) ? 'green' : '', sec: secO ? secO.id : '', m1: c1 ? +c1[1] : null, t1: tg(c1), m2: c2 ? +c2[1] : null, t2: tg(c2) });
+        var c1 = /(\d+)\D*(赤|黄|緑|黒)/.exec(norm(parts[4] || '')), c2 = /(\d+)\D*(赤|黄|緑|黒)/.exec(norm(parts[5] || ''));
+        function tg(m) { return m ? (m[2] === '黒' ? 'black' : m[2] === '赤' ? 'red' : m[2] === '黄' ? 'yellow' : 'green') : ''; }
+        items.push({ no: no2, memo: String(parts[2] || '').trim(), preg: /妊/.test(kindTxt), child: /児/.test(kindTxt), trauma: /外傷/.test(kindTxt), brain: /脳/.test(kindTxt), burn: /熱/.test(kindTxt), tag: /黒/.test(kindTxt) ? 'black' : /赤/.test(kindTxt) ? 'red' : /黄/.test(kindTxt) ? 'yellow' : /緑/.test(kindTxt) ? 'green' : '', sec: secO ? secO.id : '', m1: c1 ? +c1[1] : null, t1: tg(c1), m2: c2 ? +c2[1] : null, t2: tg(c2) });
       });
       if (!items.length) { ui.bulkMsg = bad || skip ? ('登録できる症例がありません（番号が不正 ' + bad + '件、登録済み ' + skip + '件）。') : '登録する行がありません。'; renderBody(); return; }
       var chain = Promise.resolve(), base = Date.now();
@@ -1413,8 +1466,8 @@ window.makeDb = function () {
     if (!db) { ui.dbState = 'none'; renderBanner(); return; }
     ui.dbState = 'ok';
     renderAll();
-    sub('config', 'cfg', function (id, v) { return { id: id, showReason: v.showReason !== false, pinHash: String(v.pinHash || ''), pinSalt: String(v.pinSalt || ''), ord: 0, name: id }; });
-    sub('hospitals', 'hospitals', function (id, v) { return { id: id, name: String(v.name || ''), cap: +v.cap || 0, preg: !!v.preg, ped: !!v.ped, trauma: v.trauma !== false, brain: v.brain !== false, burn: v.burn !== false, red: v.red !== false, yellow: v.yellow !== false, green: v.green !== false, ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('config', 'cfg', function (id, v) { return { id: id, showReason: v.showReason !== false, pinHash: String(v.pinHash || ''), pinSalt: String(v.pinSalt || ''), ended: !!v.ended, endedAt: +v.endedAt || 0, ord: 0, name: id }; });
+    sub('hospitals', 'hospitals', function (id, v) { return { id: id, name: String(v.name || ''), cap: +v.cap || 0, preg: !!v.preg, ped: !!v.ped, trauma: v.trauma !== false, brain: v.brain !== false, burn: v.burn !== false, red: v.red !== false, yellow: v.yellow !== false, green: v.green !== false, black: !!v.black, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('teams', 'teams', function (id, v) { return { id: id, name: String(v.name || ''), ord: +v.ord || 0 }; });
     sub('supplies', 'supplies', function (id, v) { return { id: id, name: String(v.name || ''), stock: +v.stock || 0, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('procedures', 'procs', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, needs: (v.needs && typeof v.needs === 'object') ? v.needs : {}, ord: +v.ord || 0, sample: !!v.sample }; });
@@ -1422,7 +1475,7 @@ window.makeDb = function () {
     sub('treatments', 'treats', function (id, v) { return { id: id, team: String(v.team || ''), caseNo: String(v.caseNo || ''), pid: String(v.pid || ''), pname: String(v.pname || ''), min: +v.min || 0, items: Array.isArray(v.items) ? v.items : [], t: +v.t || 0, el: v.el == null ? null : +v.el }; });
     sub('cases', 'cases', function (id, v) { return { no: id, memo: String(v.memo || ''), preg: !!v.preg, child: !!v.child, trauma: !!v.trauma, brain: !!v.brain, burn: !!v.burn, tag: validTag(v.tag), sec: String(v.sec || ''), m1: v.m1 == null ? null : +v.m1, t1: validTag(v.t1), m2: v.m2 == null ? null : +v.m2, t2: validTag(v.t2), ord: +v.ord || 0, sample: !!v.sample }; });
     sub('methods', 'methods', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, ord: +v.ord || 0, sample: !!v.sample }; });
-    sub('transports', 'log', function (id, v) { var ci = id.indexOf(':'); return { id: id, team: String(v.team || 'a'), caseNo: String(v.caseNo || (ci >= 0 ? id.slice(ci + 1) : id)), hid: String(v.hid || ''), hname: String(v.hname || ''), mid: String(v.mid || ''), mname: String(v.mname || ''), min: +v.min || 0, t: +v.t || 0 }; });
+    sub('transports', 'log', function (id, v) { var ci = id.indexOf(':'); return { id: id, team: String(v.team || 'a'), caseNo: String(v.caseNo || (ci >= 0 ? id.slice(ci + 1) : id)), hid: String(v.hid || ''), hname: String(v.hname || ''), mid: String(v.mid || ''), mname: String(v.mname || ''), min: +v.min || 0, tag: validTag(v.tag), t: +v.t || 0 }; });
     renderBanner();
   })();
 })();

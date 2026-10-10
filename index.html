@@ -297,7 +297,7 @@ window.makeDb = function () {
   var db = null;
   var ro = false;
   var isAdmin = true; /* 誰でもスタッフモードへ切替可能。入るには認証コードが必要（設定後） */
-  var S = { ended: false, endedAt: 0, sections: [], secMap: {}, hospitals: [], cases: [], methods: [], log: [], cfg: [], cfgReady: false, pinHash: '', pinSalt: '', showReason: true, supplies: [], procs: [], treats: [], supUsed: {}, teams: [], teamsReady: false, caseMap: {}, logMap: {}, usedBy: {} };
+  var S = { ended: false, endedAt: 0, sections: [], secMap: {}, hospitals: [], cases: [], methods: [], roles: [], log: [], cfg: [], cfgReady: false, pinHash: '', pinSalt: '', showReason: true, supplies: [], procs: [], treats: [], supUsed: {}, teams: [], teamsReady: false, caseMap: {}, logMap: {}, usedBy: {} };
   function teamOk(id) { for (var i = 0; i < S.teams.length; i++) if (S.teams[i].id === id) return true; return false; }
   function teamName(id) { for (var i = 0; i < S.teams.length; i++) if (S.teams[i].id === id) return S.teams[i].name; return '削除されたチーム'; }
   function loadMode() { try { return localStorage.getItem('triage-mode') === 'participant' ? 'participant' : 'staff'; } catch (e) { return 'staff'; } }
@@ -307,7 +307,7 @@ window.makeDb = function () {
   function loadTeam() { try { return localStorage.getItem('triage-team') || null; } catch (e) { return null; } }
   var ui = {
     team: loadTeam(), tCase: '', pid: null, tdone: null, tbusy: false,
-    tab: 'wait', mode: loadMode(), caseNo: '', hid: null, mid: null, armed: null,
+    tab: 'wait', mode: loadMode(), caseNo: '', hid: null, mid: null, rid: null, armed: null,
     msg: '', msgBad: false, err: '', done: null, busy: false, filter: '', bulkMsg: '', dbState: 'loading'
   };
   var pending = false;
@@ -336,6 +336,24 @@ window.makeDb = function () {
   function byNo(a, b) { return String(a.no).localeCompare(String(b.no), 'ja', { numeric: true }); }
   function byOrd(a, b) { return (a.ord - b.ord) || String(a.name).localeCompare(String(b.name), 'ja'); }
   function hosp(id) { for (var i = 0; i < S.hospitals.length; i++) if (S.hospitals[i].id === id) return S.hospitals[i]; return null; }
+  function role(id) { for (var i = 0; i < S.roles.length; i++) if (S.roles[i].id === id) return S.roles[i]; return null; }
+  function activeLog(team) { var n = Date.now(); return S.log.filter(function (l) { return l.team === team && endOf(l) > n; }); }
+  function nextFree(list) { var e = null; list.forEach(function (l) { var x = endOf(l); if (e == null || x < e) e = x; }); return e == null ? '' : '（あと ' + fmt(e - Date.now()) + ' で空きます）'; }
+  function mUse(m, team) { return activeLog(team).filter(function (l) { return l.mid === m.id; }); }
+  function mFree(m, team) { return !m.units || mUse(m, team).length < m.units; }
+  function rUse(r, team) { return activeLog(team).filter(function (l) { return l.rid === r.id; }); }
+  function rFree(r, team) { return !r.count || rUse(r, team).length < r.count; }
+  function needRole(m) { if (!m || !m.need) return null; for (var i = 0; i < S.roles.length; i++) if (S.roles[i].name === m.need) return S.roles[i]; return null; }
+  function resReasons(m, rd, team) {
+    var r = [];
+    if (!m) return r;
+    if (!mFree(m, team)) r.push('「' + m.name + '」は全台（' + m.units + '台）使用中です' + nextFree(mUse(m, team)));
+    if (m.need) {
+      if (!rd || rd.name !== m.need) r.push('「' + m.name + '」には「' + m.need + '」の同乗が必要です。担当職種を選んでください');
+    }
+    if (rd && !rFree(rd, team)) r.push('「' + rd.name + '」は全員（' + rd.count + '名）対応中です' + nextFree(rUse(rd, team)));
+    return r;
+  }
   function meth(id) { for (var i = 0; i < S.methods.length; i++) if (S.methods[i].id === id) return S.methods[i]; return null; }
   function supply(id) { for (var i = 0; i < S.supplies.length; i++) if (S.supplies[i].id === id) return S.supplies[i]; return null; }
   function proc(id) { for (var i = 0; i < S.procs.length; i++) if (S.procs[i].id === id) return S.procs[i]; return null; }
@@ -516,7 +534,7 @@ window.makeDb = function () {
     if (!list.length) return '';
     return '<div class="panel"><h2>搬送中（' + list.length + '件）</h2><div class="transit">' + list.map(function (l) {
       var h = hosp(l.hid);
-      return '<div class="trow"><span>症例 ' + esc(l.caseNo) + ' → ' + esc(l.hname || (h ? h.name : '不明')) + '（' + esc(l.mname) + '）</span>' + cdHtml(l, undefined, 'arrive') + '</div>';
+      return '<div class="trow"><span>症例 ' + esc(l.caseNo) + ' → ' + esc(l.hname || (h ? h.name : '不明')) + '（' + esc(l.mname) + (l.rname ? '・' + esc(l.rname) : '') + '）</span>' + cdHtml(l, undefined, 'arrive') + '</div>';
     }).join('') + '</div></div>';
   }
 
@@ -524,7 +542,7 @@ window.makeDb = function () {
   function sub(col, key, fn) {
     db.collection(col).onSnapshot(function (snap) {
       S[key] = snap.docs.map(function (d) { return fn(d.id, d.data() || {}); });
-      S.hospitals.sort(byOrd); S.methods.sort(byOrd); S.teams.sort(byOrd); S.supplies.sort(byOrd); S.procs.sort(byOrd); S.sections.sort(byOrd);
+      S.hospitals.sort(byOrd); S.methods.sort(byOrd); S.roles.sort(byOrd); S.teams.sort(byOrd); S.supplies.sort(byOrd); S.procs.sort(byOrd); S.sections.sort(byOrd);
       if (key === 'teams') {
         S.teamsReady = true;
         if (ui.team && !teamOk(ui.team) && !(snap.metadata && snap.metadata.fromCache)) ui.team = null;
@@ -835,7 +853,7 @@ window.makeDb = function () {
       var d = ui.done;
       return '<div class="result ok"><div class="verdict">搬送しました</div>' +
         '<div class="bigtime">搬送時間 <b>' + d.min + '</b>分</div>' +
-        '<div class="detail">' + esc(teamName(d.team)) + '　症例 ' + esc(d.no) + ' → ' + esc(d.hname) + '（' + esc(d.mname) + '）</div></div>';
+        '<div class="detail">' + esc(teamName(d.team)) + '　症例 ' + esc(d.no) + ' → ' + esc(d.hname) + '（' + esc(d.mname) + (d.rname ? '・' + esc(d.rname) : '') + '）</div></div>';
     }
     var c = S.caseMap[ui.caseNo], h = hosp(ui.hid), m = meth(ui.mid);
     if (!ui.caseNo) return '<div class="result idle">症例番号を入力してください。</div>';
@@ -853,9 +871,13 @@ window.makeDb = function () {
       return '<div class="result ng"><div class="verdict">搬送不可</div>' +
         (S.showReason ? '<ul>' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>' : '<div class="detail">この病院では受け入れできません。</div>') + '</div>';
     }
+    var rd0 = role(ui.rid), rr = resReasons(m, rd0, ui.team);
+    if (rr.length) {
+      return '<div class="result ng"><div class="verdict">搬送できません（資源）</div><ul>' + rr.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul></div>';
+    }
     return '<div class="result ok"><div class="verdict">搬送可能</div>' +
       '<div class="detail">搬送しますか？　症例 ' + esc(c.no) + ' → ' + esc(h.name) + '（残り ' + remaining(h, ui.team) + ' 名）' +
-      (m ? '　搬送手段：' + esc(m.name) + '（' + m.min + '分）' : '') + '</div>' +
+      (m ? '　搬送手段：' + esc(m.name) + '（' + m.min + '分）' : '') + (rd0 ? '　担当：' + esc(rd0.name) : '') + '</div>' +
       '<div class="row" style="margin-top:12px"><button type="button" class="btn big" data-act="confirm"' + ((!m || ui.busy || ro) ? ' disabled' : '') + '>搬送する</button>' +
       (!m ? '<span class="detail">搬送手段を選んでください。</span>' : '') + '</div></div>';
   }
@@ -867,7 +889,8 @@ window.makeDb = function () {
     info.innerHTML = infoHtml();
 
     var mbtns = S.methods.length ? S.methods.map(function (m) {
-      return '<button type="button" class="mbtn" data-act="pickMethod" data-id="' + esc(m.id) + '" aria-pressed="' + (ui.mid === m.id) + '"><span class="mn">' + esc(m.name) + '</span><span class="mt">' + m.min + '分</span></button>';
+      var busy = mUse(m, ui.team).length, free = mFree(m, ui.team);
+      return '<button type="button" class="mbtn' + (free ? '' : ' short') + '" data-act="pickMethod" data-id="' + esc(m.id) + '" aria-pressed="' + (ui.mid === m.id) + '"><span class="mn">' + esc(m.name) + '</span><span class="mt">' + m.min + '分' + (m.units ? '　空き ' + (m.units - busy) + '/' + m.units + '台' : '') + (m.need ? '　要' + esc(m.need) : '') + '</span></button>';
     }).join('') : '<div class="empty">搬送手段が未登録です。「搬送手段」タブで登録してください。</div>';
 
     var cards = S.hospitals.length ? S.hospitals.map(function (x) {
@@ -880,8 +903,14 @@ window.makeDb = function () {
         '<span class="caps">' + HATTR.map(function (a) { return '<span>' + a[1] + ' <b class="' + (x[a[0]] ? 'y' : 'n') + '">' + (x[a[0]] ? '○' : '×') + '</b></span>'; }).join('') + '</span></button>';
     }).join('') : '<div class="empty">病院が未登録です。「病院」タブで登録してください。</div>';
 
+    var mSel = meth(ui.mid), needR = mSel ? mSel.need : '';
+    var rbtns = S.roles.map(function (r) {
+      var busyR = rUse(r, ui.team).length, okR = rFree(r, ui.team) && (!needR || r.name === needR);
+      return '<button type="button" class="mbtn' + (okR ? '' : ' short') + '" data-act="pickRole" data-id="' + esc(r.id) + '" aria-pressed="' + (ui.rid === r.id) + '"><span class="mn">' + esc(r.name) + '</span><span class="mt">' + (r.count ? '空き ' + (r.count - busyR) + '/' + r.count + '名' : '人数制限なし') + '</span></button>';
+    }).join('');
     dyn.innerHTML =
       '<div class="panel"><span class="label">搬送手段</span><div class="mrow">' + mbtns + '</div></div>' +
+      (S.roles.length ? '<div class="panel"><span class="label">担当する職種' + (needR ? '（この搬送手段は「' + esc(needR) + '」が必要）' : '（任意）') + '</span><div class="mrow">' + rbtns + '</div></div>' : '') +
       '<div class="panel"><span class="label">搬送先</span><div class="hgrid">' + cards + '</div></div>' +
       '<div aria-live="polite">' + resultHtml() + '</div>' +
       '<div class="status' + (ui.msgBad ? ' bad' : '') + '" aria-live="polite">' + esc(ui.msg) + '</div>' +
@@ -913,14 +942,28 @@ window.makeDb = function () {
     var add = '<form class="panel addform" data-form="addMethod">' +
       '<div class="grow"><label class="label" for="mn">搬送手段</label><input type="text" id="mn" name="name" required placeholder="例：救急車" style="width:100%"></div>' +
       '<div><label class="label" for="mm">搬送時間（分）</label><input type="number" id="mm" name="min" min="0" value="10" required class="num"></div>' +
+      '<div><label class="label" for="mu">台数（0＝無制限）</label><input type="number" id="mu" name="units" min="0" value="0" class="num"></div>' +
       '<button class="btn" type="submit">追加</button></form>';
+    function needSel(m) { return '<select class="tagsel" aria-label="必要な職種" data-chg="mNeed" data-id="' + esc(m.id) + '"><option value="">同乗不要</option>' + S.roles.map(function (r) { return '<option value="' + esc(r.name) + '"' + (m.need === r.name ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') + (m.need && !needRole(m) ? '<option value="' + esc(m.need) + '" selected>' + esc(m.need) + '（未登録）</option>' : '') + '</select>'; }
     var list = S.methods.length ? S.methods.map(function (m) {
       return '<div class="item"><div class="fields">' +
         '<input class="nm" type="text" aria-label="搬送手段" value="' + esc(m.name) + '" data-chg="mName" data-id="' + esc(m.id) + '">' +
         '<label class="cb">搬送時間 <input class="num" type="number" min="0" value="' + m.min + '" data-chg="mMin" data-id="' + esc(m.id) + '"> 分</label>' +
+        '<label class="cb">台数 <input class="num" type="number" min="0" value="' + m.units + '" data-chg="mUnits" data-id="' + esc(m.id) + '"> 台（0＝無制限）</label>' +
+        '<label class="cb">必要な職種 ' + needSel(m) + '</label>' +
         '</div><div>' + armBtn('dm' + m.id, '削除', 'もう一度押すと削除', 'delMethod', 'data-id="' + esc(m.id) + '"') + '</div></div>';
     }).join('') : '<div class="empty">搬送手段が未登録です。</div>';
-    return '<div class="stack">' + add + '<div class="panel"><h2>登録済みの搬送手段</h2>' + list + '</div></div>';
+    var radd = '<form class="panel addform" data-form="addRole">' +
+      '<div class="grow"><label class="label" for="rn">職種</label><input type="text" id="rn" name="name" required placeholder="例：医師" style="width:100%"></div>' +
+      '<div><label class="label" for="rc">人数（0＝無制限）</label><input type="number" id="rc" name="count" min="0" value="0" class="num"></div>' +
+      '<button class="btn" type="submit">追加</button></form>';
+    var rlist = S.roles.length ? S.roles.map(function (r) {
+      return '<div class="item"><div class="fields">' +
+        '<input class="nm" type="text" aria-label="職種" value="' + esc(r.name) + '" data-chg="rName" data-id="' + esc(r.id) + '">' +
+        '<label class="cb">人数 <input class="num" type="number" min="0" value="' + r.count + '" data-chg="rCount" data-id="' + esc(r.id) + '"> 名（0＝無制限）</label>' +
+        '</div><div>' + armBtn('dr' + r.id, '削除', 'もう一度押すと削除', 'delRole', 'data-id="' + esc(r.id) + '"') + '</div></div>';
+    }).join('') : '<div class="empty">職種が未登録です。登録すると、搬送の判定で担当職種を選べます。</div>';
+    return '<div class="stack">' + add + '<div class="panel"><h2>登録済みの搬送手段</h2><p class="sub" style="margin-top:0">台数を決めると、搬送中の車両が全台使われている間は、その手段で搬送できません（到着すると空きます）。台数・人数はチームごとに数えます。</p>' + list + '</div>' + radd + '<div class="panel"><h2>登録済みの職種</h2><p class="sub" style="margin-top:0">搬送手段の「必要な職種」に設定した職種は、搬送中は拘束されます（到着すると空きます）。</p>' + rlist + '</div></div>';
   }
 
   function secSelect(attrs, cur) {
@@ -1147,10 +1190,12 @@ window.makeDb = function () {
 
   async function confirmTransport() {
     if (ui.busy || !canWrite()) return;
-    var c = S.caseMap[ui.caseNo], h = hosp(ui.hid), m = meth(ui.mid), team = ui.team, tid = team + ':' + (c ? c.no : '');
+    var c = S.caseMap[ui.caseNo], h = hosp(ui.hid), m = meth(ui.mid), rd = role(ui.rid), team = ui.team, tid = team + ':' + (c ? c.no : '');
     if (!c || !h || !m || !team) return;
     if (S.ended) { setStatus('全セクションが終了しました。搬送はできません。', true); renderJudgeDyn(); return; }
     if (tagInfo(c, team).state === 'notstarted') { setStatus(notStartedMsg(c), true); renderJudgeDyn(); return; }
+    var rr0 = resReasons(m, rd, team);
+    if (rr0.length) { setStatus(rr0[0], true); renderJudgeDyn(); return; }
     ui.busy = true; setStatus('', false); renderJudgeDyn();
     try {
       var lock = null;
@@ -1165,11 +1210,15 @@ window.makeDb = function () {
       var etg = tagInfo(c, team).tag;
       if (etg === 'black') { setStatus('黒タグ（死亡）に変わったため、搬送できません。搬送は確定していません。', true); return; }
       if (etg && !h[etg]) { setStatus('タグが ' + tagName(etg) + ' に変わったため、この病院へは搬送できません。搬送は確定していません。', true); return; }
+      var mine = await db.collection('transports').where('team', '==', team).get(), nowT = Date.now(), mc = 0, rcn = 0;
+      mine.docs.forEach(function (dd) { var v = dd.data() || {}; if ((+v.t || 0) + (+v.min || 0) * 60000 > nowT) { if (v.mid === m.id) mc++; if (rd && v.rid === rd.id) rcn++; } });
+      if (m.units && mc >= m.units) { setStatus('他の端末の搬送で「' + m.name + '」が全台使用中になりました。搬送は確定していません。', true); return; }
+      if (rd && rd.count && rcn >= rd.count) { setStatus('他の端末の搬送で「' + rd.name + '」が全員対応中になりました。搬送は確定していません。', true); return; }
       var ex = await db.doc('transports/' + tid).get();
       if (ex.exists) { setStatus('症例 ' + c.no + ' は他の端末ですでに（' + teamName(team) + 'で）搬送が確定しています。', true); return; }
-      await db.doc('transports/' + tid).set({ team: team, caseNo: c.no, hid: h.id, hname: h.name, mid: m.id, mname: m.name, min: m.min, tag: tagInfo(c, team).tag, t: Date.now() });
-      ui.done = { team: team, no: c.no, hname: h.name, mname: m.name, min: m.min };
-      ui.caseNo = ''; ui.hid = null;
+      await db.doc('transports/' + tid).set({ team: team, caseNo: c.no, hid: h.id, hname: h.name, mid: m.id, mname: m.name, rid: rd ? rd.id : '', rname: rd ? rd.name : '', min: m.min, tag: tagInfo(c, team).tag, t: Date.now() });
+      ui.done = { team: team, no: c.no, hname: h.name, mname: m.name, rname: rd ? rd.name : '', min: m.min };
+      ui.caseNo = ''; ui.hid = null; ui.rid = null;
       var inp = document.getElementById('caseNo');
       if (inp) { inp.value = ''; inp.focus(); }
     } catch (e) {
@@ -1202,7 +1251,7 @@ window.makeDb = function () {
     }
     if (!partOk[name] && !isStaff()) return;
     if (name === 'tab' && !tabAllowed(d.tab)) return;
-    var armKinds = { endAll: 1, secReset: 1, delSection: 1, clearPin: 1, delSupply: 1, delProc: 1, delTreat: 1, delTeam: 1, delHosp: 1, delCase: 1, delMethod: 1, delLog: 1, clearLog: 1, resetAll: 1, clearSample: 1 };
+    var armKinds = { endAll: 1, secReset: 1, delSection: 1, clearPin: 1, delSupply: 1, delProc: 1, delTreat: 1, delTeam: 1, delHosp: 1, delCase: 1, delMethod: 1, delRole: 1, delLog: 1, clearLog: 1, resetAll: 1, clearSample: 1 };
     if (armKinds[name]) {
       if (ui.armed !== d.key) {
         ui.armed = d.key; renderBanner();
@@ -1225,7 +1274,13 @@ window.makeDb = function () {
       renderBody(); return;
     }
     if (name === 'pickHosp') { ui.hid = d.id; ui.done = null; setStatus('', false); renderJudgeDyn(); return; }
-    if (name === 'pickMethod') { ui.mid = d.id; ui.done = null; setStatus('', false); renderJudgeDyn(); return; }
+    if (name === 'pickMethod') {
+      ui.mid = d.id; ui.done = null; setStatus('', false);
+      var pm = meth(d.id), nr = needRole(pm);
+      if (pm && pm.need) ui.rid = nr ? nr.id : null;
+      renderJudgeDyn(); return;
+    }
+    if (name === 'pickRole') { ui.rid = ui.rid === d.id ? null : d.id; ui.done = null; setStatus('', false); renderJudgeDyn(); return; }
     if (name === 'confirm') { confirmTransport(); return; }
     if (name === 'pickProc') { ui.pid = d.id; ui.tdone = null; setStatus('', false); renderTreatDyn(); return; }
     if (name === 'confirmTreat') { confirmTreat(); return; }
@@ -1259,6 +1314,9 @@ window.makeDb = function () {
       (S.logByCase[d.no] || []).forEach(function (l) { cp.push('transports/' + l.id); });
       S.treats.filter(function (t) { return t.caseNo === d.no; }).forEach(function (t) { cp.push('treatments/' + t.id); });
       p = delAll(cp);
+    } else if (name === 'delRole') {
+      if (ui.rid === d.id) ui.rid = null;
+      p = delAll(['roles/' + d.id]);
     } else if (name === 'delMethod') {
       if (ui.mid === d.id) ui.mid = null;
       p = delAll(['methods/' + d.id]);
@@ -1360,6 +1418,10 @@ window.makeDb = function () {
     else if (k === 'hPed') { path = 'hospitals/' + id; patch = { ped: el.checked }; }
     else if (k === 'mName') { var mn = el.value.trim(); if (!mn) { renderBody(); return; } path = 'methods/' + id; patch = { name: mn }; }
     else if (k === 'mMin') { n = parseInt(el.value, 10); path = 'methods/' + id; patch = { min: isNaN(n) || n < 0 ? 0 : n }; }
+    else if (k === 'mUnits') { n = parseInt(el.value, 10); path = 'methods/' + id; patch = { units: isNaN(n) || n < 0 ? 0 : n }; }
+    else if (k === 'mNeed') { path = 'methods/' + id; patch = { need: el.value }; }
+    else if (k === 'rName') { var rn = el.value.trim(); if (!rn) { renderBody(); return; } path = 'roles/' + id; patch = { name: rn }; }
+    else if (k === 'rCount') { n = parseInt(el.value, 10); path = 'roles/' + id; patch = { count: isNaN(n) || n < 0 ? 0 : n }; }
     else if (k === 'tName') { var tn = el.value.trim(); if (!tn) { renderBody(); return; } path = 'teams/' + id; patch = { name: tn }; }
     else if (k === 'sName') { var sn2 = el.value.trim(); if (!sn2) { renderBody(); return; } path = 'supplies/' + id; patch = { name: sn2 }; }
     else if (k === 'sStock') { n = parseInt(el.value, 10); path = 'supplies/' + id; patch = { stock: isNaN(n) || n < 0 ? 0 : n }; }
@@ -1409,7 +1471,12 @@ window.makeDb = function () {
       var mname = String(fd.get('name') || '').trim();
       n = parseInt(fd.get('min'), 10);
       if (!mname) return;
-      db.collection('methods').add({ name: mname, min: isNaN(n) || n < 0 ? 0 : n, ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+      var mu = parseInt(fd.get('units'), 10);
+      db.collection('methods').add({ name: mname, min: isNaN(n) || n < 0 ? 0 : n, units: isNaN(mu) || mu < 0 ? 0 : mu, need: '', ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
+    } else if (kind === 'addRole') {
+      var rname2 = String(fd.get('name') || '').trim(), rc2 = parseInt(fd.get('count'), 10);
+      if (!rname2) return;
+      db.collection('roles').add({ name: rname2, count: isNaN(rc2) || rc2 < 0 ? 0 : rc2, ord: Date.now() }).then(function () { f.reset(); }).catch(failed);
     } else if (kind === 'addSection') {
       var secn = String(fd.get('name') || '').trim() || ('セクション' + (S.sections.length + 1));
       db.collection('sections').add({ name: secn, ord: Date.now(), startedAt: null, pausedAt: null }).then(function () { f.reset(); }).catch(failed);
@@ -1535,8 +1602,9 @@ window.makeDb = function () {
     sub('sections', 'sections', function (id, v) { return { id: id, name: String(v.name || ''), startedAt: +v.startedAt || 0, pausedAt: +v.pausedAt || 0, ord: +v.ord || 0 }; });
     sub('treatments', 'treats', function (id, v) { return { id: id, team: String(v.team || ''), caseNo: String(v.caseNo || ''), pid: String(v.pid || ''), pname: String(v.pname || ''), min: +v.min || 0, items: Array.isArray(v.items) ? v.items : [], t: +v.t || 0, el: v.el == null ? null : +v.el }; });
     sub('cases', 'cases', function (id, v) { return { no: id, memo: String(v.memo || ''), preg: !!v.preg, child: !!v.child, trauma: !!v.trauma, brain: !!v.brain, burn: !!v.burn, tag: validTag(v.tag), sec: String(v.sec || ''), m1: v.m1 == null ? null : +v.m1, t1: validTag(v.t1), m2: v.m2 == null ? null : +v.m2, t2: validTag(v.t2), fix: v.fix == null ? null : String(v.fix), ord: +v.ord || 0, sample: !!v.sample }; });
-    sub('methods', 'methods', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, ord: +v.ord || 0, sample: !!v.sample }; });
-    sub('transports', 'log', function (id, v) { var ci = id.indexOf(':'); return { id: id, team: String(v.team || 'a'), caseNo: String(v.caseNo || (ci >= 0 ? id.slice(ci + 1) : id)), hid: String(v.hid || ''), hname: String(v.hname || ''), mid: String(v.mid || ''), mname: String(v.mname || ''), min: +v.min || 0, tag: validTag(v.tag), t: +v.t || 0 }; });
+    sub('methods', 'methods', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, units: +v.units || 0, need: String(v.need || ''), ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('roles', 'roles', function (id, v) { return { id: id, name: String(v.name || ''), count: +v.count || 0, ord: +v.ord || 0 }; });
+    sub('transports', 'log', function (id, v) { var ci = id.indexOf(':'); return { id: id, team: String(v.team || 'a'), caseNo: String(v.caseNo || (ci >= 0 ? id.slice(ci + 1) : id)), hid: String(v.hid || ''), hname: String(v.hname || ''), mid: String(v.mid || ''), mname: String(v.mname || ''), rid: String(v.rid || ''), rname: String(v.rname || ''), min: +v.min || 0, tag: validTag(v.tag), t: +v.t || 0 }; });
     renderBanner();
   })();
 })();

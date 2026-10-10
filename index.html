@@ -377,7 +377,21 @@ window.makeDb = function () {
     return a;
   }
   function tagAt(c, ms) { var t = c.tag || ''; changes(c).forEach(function (ch) { if (ms >= ch.m * 60000) t = ch.tag; }); return t; }
+  function fixList(c) { return c.fix == null ? null : String(c.fix).split('/').map(function (x) { return x.trim(); }).filter(function (x) { return x && x !== '-'; }); }
   function freezeEl(c, team) {
+    var req = fixList(c);
+    if (req) {
+      /* 必要処置が指定された症例：指定の処置が全部始まった時点で悪化が止まる（違う処置では止まらない） */
+      if (!req.length) return null;
+      var mx = null;
+      for (var i = 0; i < req.length; i++) {
+        var e = null;
+        S.treats.forEach(function (t) { if (t.team === team && t.caseNo === c.no && t.pname === req[i] && t.el != null && (e == null || t.el < e)) e = t.el; });
+        if (e == null) return null;
+        if (mx == null || e > mx) mx = e;
+      }
+      return mx;
+    }
     var best = null;
     S.treats.forEach(function (t) { if (t.team === team && t.caseNo === c.no && t.el != null && (best == null || t.el < best)) best = t.el; });
     return best;
@@ -1011,7 +1025,7 @@ window.makeDb = function () {
       '<span>／</span><input class="num" type="number" min="0" name="m2" placeholder="分" aria-label="2回目の悪化（分）"> 分後に ' + tagSelect('name="t2"', '', '—') + '</div>' +
       '<button class="btn" type="submit">追加</button></form>';
     var bulk = '<form class="panel" data-form="bulkCases"><h2>まとめて登録</h2>' +
-      '<p class="sub" style="margin-top:0">1行に1症例。「番号,区分,メモ」の形で書きます。区分には「外傷」「脳疾患」「熱傷」「妊婦」「小児」「赤」「黄」「緑」を必要なだけ並べて書きます（例：外傷 赤、妊婦 黄）。該当しなければ空欄。続けて「,セクション名,15黄,30赤」のように書くと、セクションと悪化（○分後に○色）も登録できます（まだ無いセクション名は自動で作られます）。表計算ソフトからの貼り付けも使えます。登録済みの番号は上書きしません。</p>' +
+      '<p class="sub" style="margin-top:0">1行に1症例。「番号,区分,メモ」の形で書きます。区分には「外傷」「脳疾患」「熱傷」「妊婦」「小児」「赤」「黄」「緑」を必要なだけ並べて書きます（例：外傷 赤、妊婦 黄）。該当しなければ空欄。続けて「,セクション名,15黄,30赤」のように書くと、セクションと悪化（○分後に○色）も登録できます（まだ無いセクション名は自動で作られます）さらに7つ目に「止:緊急脱気」「止:圧迫止血/静脈路確保」のように書くと、その処置がすべて行われたときだけ悪化が止まります（違う処置では止まりません。「止:-」はどの処置でも止まらない。書かなければどの処置でも止まる）。まだ無い処置は自動で作られます（2分・物資なし）。表計算ソフトからの貼り付けも使えます。登録済みの番号は上書きしません。</p>' +
       '<textarea id="bulk" name="bulk" placeholder="1,外傷 緑,事故,セクション1,15黄,30赤&#10;2,小児 黄,,セクション1&#10;3,,胸痛"></textarea>' +
       '<div class="row" style="margin-top:10px"><button class="btn" type="submit">まとめて登録</button><span class="status' + (/不正|できません/.test(ui.bulkMsg) ? ' bad' : '') + '" aria-live="polite">' + esc(ui.bulkMsg) + '</span></div></form>';
     var filter = '<div class="panel"><label class="label" for="caseFilter">症例番号で絞り込み</label><input type="text" id="caseFilter" inputmode="numeric" autocomplete="off" value="' + esc(ui.filter) + '" style="width:200px"></div>';
@@ -1438,7 +1452,7 @@ window.makeDb = function () {
         var secN = String(parts[3] || '').trim(), secO = S.sections.filter(function (x) { return x.name === secN; })[0];
         var c1 = /(\d+)\D*(赤|黄|緑|黒)/.exec(norm(parts[4] || '')), c2 = /(\d+)\D*(赤|黄|緑|黒)/.exec(norm(parts[5] || ''));
         function tg(m) { return m ? (m[2] === '黒' ? 'black' : m[2] === '赤' ? 'red' : m[2] === '黄' ? 'yellow' : 'green') : ''; }
-        items.push({ no: no2, memo: String(parts[2] || '').trim(), preg: /妊/.test(kindTxt), child: /児/.test(kindTxt), trauma: /外傷/.test(kindTxt), brain: /脳/.test(kindTxt), burn: /熱/.test(kindTxt), tag: /黒/.test(kindTxt) ? 'black' : /赤/.test(kindTxt) ? 'red' : /黄/.test(kindTxt) ? 'yellow' : /緑/.test(kindTxt) ? 'green' : '', sec: secO ? secO.id : '', secName: secN, m1: c1 ? +c1[1] : null, t1: tg(c1), m2: c2 ? +c2[1] : null, t2: tg(c2) });
+        items.push({ no: no2, memo: String(parts[2] || '').trim(), preg: /妊/.test(kindTxt), child: /児/.test(kindTxt), trauma: /外傷/.test(kindTxt), brain: /脳/.test(kindTxt), burn: /熱/.test(kindTxt), tag: /黒/.test(kindTxt) ? 'black' : /赤/.test(kindTxt) ? 'red' : /黄/.test(kindTxt) ? 'yellow' : /緑/.test(kindTxt) ? 'green' : '', sec: secO ? secO.id : '', secName: secN, fix: (function () { var fx = /^止[:：]\s*(.*)$/.exec(String(parts[6] || '').trim()); return fx ? (fx[1].trim() || '-') : null; })(), m1: c1 ? +c1[1] : null, t1: tg(c1), m2: c2 ? +c2[1] : null, t2: tg(c2) });
       });
       if (!items.length) { ui.bulkMsg = bad || skip ? ('登録できる症例がありません（番号が不正 ' + bad + '件、登録済み ' + skip + '件）。') : '登録する行がありません。'; renderBody(); return; }
       var need = [];
@@ -1448,11 +1462,16 @@ window.makeDb = function () {
       need.forEach(function (nm, k) {
         chain = chain.then(function () { return db.collection('sections').add({ name: nm, ord: base + k, startedAt: null, pausedAt: null }).then(function (ref) { secIds[nm] = ref.id; }); });
       });
+      var pneed = [];
+      items.forEach(function (it) { (fixList({ fix: it.fix }) || []).forEach(function (nm) { if (pneed.indexOf(nm) < 0 && !S.procs.some(function (p) { return p.name === nm; })) pneed.push(nm); }); });
+      pneed.forEach(function (nm, k) {
+        chain = chain.then(function () { return db.collection('procedures').add({ name: nm, min: 2, needs: {}, ord: base + 500 + k }); });
+      });
       for (var i = 0; i < items.length; i += 10) {
         (function (chunk, off) {
           chain = chain.then(function () {
             return Promise.all(chunk.map(function (it, j) {
-              return db.doc('cases/' + it.no).set({ memo: it.memo, preg: it.preg, child: it.child, trauma: it.trauma, brain: it.brain, burn: it.burn, tag: it.tag, sec: it.sec || secIds[it.secName] || '', m1: it.m1, t1: it.t1, m2: it.m2, t2: it.t2, ord: base + off + j });
+              return db.doc('cases/' + it.no).set({ memo: it.memo, preg: it.preg, child: it.child, trauma: it.trauma, brain: it.brain, burn: it.burn, tag: it.tag, sec: it.sec || secIds[it.secName] || '', m1: it.m1, t1: it.t1, m2: it.m2, t2: it.t2, fix: it.fix, ord: base + off + j });
             }));
           });
         })(items.slice(i, i + 10), i);
@@ -1515,7 +1534,7 @@ window.makeDb = function () {
     sub('procedures', 'procs', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, needs: (v.needs && typeof v.needs === 'object') ? v.needs : {}, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('sections', 'sections', function (id, v) { return { id: id, name: String(v.name || ''), startedAt: +v.startedAt || 0, pausedAt: +v.pausedAt || 0, ord: +v.ord || 0 }; });
     sub('treatments', 'treats', function (id, v) { return { id: id, team: String(v.team || ''), caseNo: String(v.caseNo || ''), pid: String(v.pid || ''), pname: String(v.pname || ''), min: +v.min || 0, items: Array.isArray(v.items) ? v.items : [], t: +v.t || 0, el: v.el == null ? null : +v.el }; });
-    sub('cases', 'cases', function (id, v) { return { no: id, memo: String(v.memo || ''), preg: !!v.preg, child: !!v.child, trauma: !!v.trauma, brain: !!v.brain, burn: !!v.burn, tag: validTag(v.tag), sec: String(v.sec || ''), m1: v.m1 == null ? null : +v.m1, t1: validTag(v.t1), m2: v.m2 == null ? null : +v.m2, t2: validTag(v.t2), ord: +v.ord || 0, sample: !!v.sample }; });
+    sub('cases', 'cases', function (id, v) { return { no: id, memo: String(v.memo || ''), preg: !!v.preg, child: !!v.child, trauma: !!v.trauma, brain: !!v.brain, burn: !!v.burn, tag: validTag(v.tag), sec: String(v.sec || ''), m1: v.m1 == null ? null : +v.m1, t1: validTag(v.t1), m2: v.m2 == null ? null : +v.m2, t2: validTag(v.t2), fix: v.fix == null ? null : String(v.fix), ord: +v.ord || 0, sample: !!v.sample }; });
     sub('methods', 'methods', function (id, v) { return { id: id, name: String(v.name || ''), min: +v.min || 0, ord: +v.ord || 0, sample: !!v.sample }; });
     sub('transports', 'log', function (id, v) { var ci = id.indexOf(':'); return { id: id, team: String(v.team || 'a'), caseNo: String(v.caseNo || (ci >= 0 ? id.slice(ci + 1) : id)), hid: String(v.hid || ''), hname: String(v.hname || ''), mid: String(v.mid || ''), mname: String(v.mname || ''), min: +v.min || 0, tag: validTag(v.tag), t: +v.t || 0 }; });
     renderBanner();
